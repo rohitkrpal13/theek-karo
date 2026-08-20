@@ -1,0 +1,130 @@
+name: Dependabot Auto-Merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Auto-merge minor and patch updates
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-merge minor and patch updates
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          echo "✅ Auto-merging ${{ steps.metadata.outputs.update-type }} update"
+          gh pr merge --auto --squash "$PR_URL"
+          gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Require manual review for major updates
+  require-review:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Check for major updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          echo "⚠️ Major update detected - requires manual review"
+          echo "Update type: ${{ steps.metadata.outputs.update-type }}"
+          echo "Package: ${{ steps.metadata.outputs.dependency-name }}"
+          echo "Version: ${{ steps.metadata.outputs.previous-version }} → ${{ steps.metadata.outputs.new-version }}"
+
+      - name: Add review label
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ['major-update', 'needs-review']
+            })
+
+  # Security updates - auto-merge with extra checks
+  security-update:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]' && steps.metadata.outputs.dependency-type == 'direct:production'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Run security scan
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          echo "🔒 Running security scan for ${{ steps.metadata.outputs.dependency-name }}"
+          # Add your security scan commands here
+
+      - name: Auto-merge security patch
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        run: |
+          echo "✅ Auto-merging security patch"
+          gh pr merge --auto --squash "$PR_URL"
+          gh pr review --approve "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Comment on PR with update summary
+  comment:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Add comment with update summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const metadata = `${{ steps.metadata.outputs.update-type }}`;
+            const dependency = `${{ steps.metadata.outputs.dependency-name }}`;
+            const prevVersion = `${{ steps.metadata.outputs.previous-version }}`;
+            const newVersion = `${{ steps.metadata.outputs.new-version }}`;
+            
+            let emoji = '📦';
+            if (metadata.includes('patch')) emoji = '🔧';
+            if (metadata.includes('minor')) emoji = '✨';
+            if (metadata.includes('major')) emoji = '⚠️';
+            
+            const body = `## ${emoji} Dependabot Update
+            
+            **Package:** \`${dependency}\`
+            **Update:** ${prevVersion} → ${newVersion}
+            **Type:** ${metadata}
+            
+            ### What's Changed
+            - Updated from ${prevVersion} to ${newVersion}
+            - See [release notes](https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/${dependency.replace('/', '-').replace('@', '')}@${newVersion}) for details
+            
+            ### Review Checklist
+            - [ ] Tests pass
+            - [ ] No breaking changes
+            - [ ] Documentation updated (if needed)
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+        env:
+          steps.metadata.outputs.update-type: ${{ steps.metadata.outputs.update-type }}
+          steps.metadata.outputs.dependency-name: ${{ steps.metadata.outputs.dependency-name }}
+          steps.metadata.outputs.previous-version: ${{ steps.metadata.outputs.previous-version }}
+          steps.metadata.outputs.new-version: ${{ steps.metadata.outputs.new-version }}

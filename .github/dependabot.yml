@@ -1,0 +1,228 @@
+# Dependabot configuration for Theek Karo
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # =============================================================================
+  # Python Dependencies (Backend)
+  # =============================================================================
+  - package-ecosystem: "pip"
+    directory: "/services/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      # Group minor and patch updates together
+      api-dependencies:
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore major updates (require manual review)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # =============================================================================
+  # npm Dependencies (Frontend)
+  # =============================================================================
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      # Group React-related updates
+      react-deps:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "react-*"
+          - "@types/react*"
+      # Group Next.js related updates
+      nextjs-deps:
+        patterns:
+          - "next"
+          - "@next/*"
+      # Group testing updates
+      test-deps:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+          - "playwright"
+          - "@playwright/*"
+      # Group linting updates
+      lint-deps:
+        patterns:
+          - "eslint"
+          - "@typescript-eslint/*"
+          - "eslint-plugin-*"
+      # Group minor and patch updates
+      other-deps:
+        update-types:
+          - "minor"
+          - "patch"
+    # Ignore major updates (require manual review)
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # =============================================================================
+  # GitHub Actions
+  # =============================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      # Group GitHub Actions updates
+      github-actions:
+        patterns:
+          - "*"
+
+  # =============================================================================
+  # Docker
+  # =============================================================================
+  - package-ecosystem: "docker"
+    directory: "/services/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "11:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+
+  # =============================================================================
+  # Terraform
+  # =============================================================================
+  - package-ecosystem: "terraform"
+    directory: "/infra/terraform"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "12:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "infrastructure"
+    commit-message:
+      prefix: "infra"
+      include: "scope"
+    groups:
+      # Group AWS provider updates
+      aws-deps:
+        patterns:
+          - "aws_*"
+      # Group other providers
+      other-deps:
+        patterns:
+          - "*"
+
+  # =============================================================================
+  # Piepmatz (pip-based tools)
+  # =============================================================================
+  - package-ecosystem: "pip"
+    directory: "/.github/scripts"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "10:00"
+      timezone: "Asia/Kolkata"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "rohitkrpal13"
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+# =============================================================================
+# Security Updates (always enabled)
+# =============================================================================
+# Security updates are enabled by default and don't need configuration here.
+# They create PRs automatically when vulnerabilities are detected.
+
+# =============================================================================
+# Auto-merge Configuration
+# =============================================================================
+# Note: Auto-merge requires branch protection rules to be enabled.
+# To enable auto-merge for patch updates, add this to branch protection:
+# - Require status checks to pass
+# - Require conversation resolution
+# - Allow auto-merge
+
+# =============================================================================
+# Labels
+# =============================================================================
+# Labels are used to categorize Dependabot PRs:
+# - dependencies: All dependency updates
+# - python: Python-specific updates
+# - javascript: JavaScript/TypeScript updates
+# - github-actions: GitHub Actions updates
+# - docker: Docker updates
+# - terraform: Terraform updates
+# - infrastructure: Infrastructure-related updates
