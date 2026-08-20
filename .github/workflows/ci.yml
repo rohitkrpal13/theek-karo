@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   api-gates:
     runs-on: ubuntu-latest
@@ -138,3 +143,29 @@ jobs:
       - name: Playwright e2e (mobile + budget)
         working-directory: apps/web
         run: npx playwright test
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for hardcoded secrets
+        run: |
+          # Scan for common secret patterns
+          if grep -rn --include="*.py" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.env*" --include="*.yml" --include="*.yaml" \
+            -E '(password|secret|api_key|token|credential)\s*=\s*["\x27][^"\x27]{8,}' \
+            --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=__pycache__ --exclude-dir=.git \
+            --exclude='*.test.*' --exclude='*.spec.*' --exclude='conftest.py' --exclude='seed_*' \
+            . 2>/dev/null; then
+            echo "⚠️ Potential hardcoded secrets found"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+      - name: Check .env files not committed
+        run: |
+          if git ls-files | grep -E '\.env$'; then
+            echo "⚠️ .env file found in git"
+            exit 1
+          fi
+          echo "✅ No .env files in repo"

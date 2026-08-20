@@ -12,10 +12,16 @@ on:
     paths:
       - "services/api/**"
       - "apps/web/**"
+      - "infra/terraform/**"
 
 permissions:
   id-token: write # OIDC to AWS
   contents: read
+
+# Prevent concurrent deploys to the same environment
+concurrency:
+  group: deploy-${{ inputs.environment || 'staging' }}
+  cancel-in-progress: false
 
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
