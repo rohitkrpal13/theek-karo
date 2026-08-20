@@ -1,0 +1,444 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly on Sundays at 6am IST
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of scan (full, quick, dependency)'
+        required: false
+        default: full
+        type: choice
+        options:
+          - full
+          - quick
+          - dependency
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  PYTHON_VERSION: '3.13'
+  NODE_VERSION: '22'
+
+jobs:
+  # =============================================================================
+  # Code Security Analysis
+  # =============================================================================
+  code-security:
+    name: Code Security Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          cd services/api && pip install bandit semgrep safety pip-audit
+          cd ../.. && npm install -g semgrep
+
+      - name: Run Bandit (Python Security Linter)
+        working-directory: services/api
+        run: |
+          echo "🔍 Running Bandit security scan..."
+          bandit -r src -f json -o bandit-report.json --severity-level medium || true
+          bandit -r src --severity-level medium
+        continue-on-error: true
+
+      - name: Run Semgrep (Multi-language SAST)
+        run: |
+          echo "🔍 Running Semgrep security scan..."
+          semgrep scan \
+            --config=auto \
+            --severity=ERROR \
+            --severity=WARNING \
+            --json \
+            --output=semgrep-report.json \
+            . || true
+          semgrep scan --config=auto --severity=ERROR --severity=WARNING .
+        continue-on-error: true
+
+      - name: Run Safety (Python Dependency Check)
+        working-directory: services/api
+        run: |
+          echo "🔍 Checking Python dependencies for vulnerabilities..."
+          pip install safety
+          safety check --json --output safety-report.json || true
+          safety check
+        continue-on-error: true
+
+      - name: Run npm audit (Node.js Dependencies)
+        working-directory: apps/web
+        run: |
+          echo "🔍 Checking Node.js dependencies..."
+          npm audit --json > npm-audit-report.json || true
+          npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Upload Security Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            services/api/bandit-report.json
+            semgrep-report.json
+            services/api/safety-report.json
+            apps/web/npm-audit-report.json
+          retention-days: 30
+
+      - name: Generate Security Summary
+        if: always()
+        run: |
+          echo "## 🔒 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Bandit (Python SAST)" >> $GITHUB_STEP_SUMMARY
+          if [ -f services/api/bandit-report.json ]; then
+            ISSUES=$(cat services/api/bandit-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('results', [])))")
+            echo "- Issues found: $ISSUES" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Semgrep (Multi-language SAST)" >> $GITHUB_STEP_SUMMARY
+          if [ -f semgrep-report.json ]; then
+            ISSUES=$(cat semgrep-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('results', [])))")
+            echo "- Issues found: $ISSUES" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Safety (Python Dependencies)" >> $GITHUB_STEP_SUMMARY
+          if [ -f services/api/safety-report.json ]; then
+            ISSUES=$(cat services/api/safety-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d))" 2>/dev/null || echo "0")
+            echo "- Vulnerabilities found: $ISSUES" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### npm audit (Node.js Dependencies)" >> $GITHUB_STEP_SUMMARY
+          if [ -f apps/web/npm-audit-report.json ]; then
+            ISSUES=$(cat apps/web/npm-audit-report.json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('metadata', {}).get('vulnerabilities', {}).get('total', 0))" 2>/dev/null || echo "0")
+            echo "- Vulnerabilities found: $ISSUES" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =============================================================================
+  # Dependency Vulnerability Scan
+  # =============================================================================
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Run Trivy vulnerability scanner (dependencies)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: services/api
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: 0
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs-results.sarif
+
+      - name: Run pip-audit
+        working-directory: services/api
+        run: |
+          echo "🔍 Running pip-audit..."
+          pip install pip-audit
+          pip-audit --format=json --output=pip-audit-report.json || true
+          pip-audit
+        continue-on-error: true
+
+      - name: Run npm audit
+        working-directory: apps/web
+        run: |
+          echo "🔍 Running npm audit..."
+          npm audit --json > npm-audit-full-report.json || true
+          npm audit --audit-level=critical
+        continue-on-error: true
+
+      - name: Upload Dependency Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-reports
+          path: |
+            trivy-fs-results.sarif
+            services/api/pip-audit-report.json
+            apps/web/npm-audit-full-report.json
+          retention-days: 30
+
+  # =============================================================================
+  # Container Security Scan
+  # =============================================================================
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image (API)
+        run: |
+          docker build -t theek-karo/api:scan services/api
+
+      - name: Build Docker image (Web)
+        run: |
+          docker build -t theek-karo/web:scan apps/web
+
+      - name: Run Trivy on API image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: theek-karo/api:scan
+          format: sarif
+          output: trivy-api-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Run Trivy on Web image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: theek-karo/web:scan
+          format: sarif
+          output: trivy-web-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Upload Container Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: |
+            trivy-api-results.sarif
+            trivy-web-results.sarif
+
+  # =============================================================================
+  # Infrastructure Security Scan
+  # =============================================================================
+  infra-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Checkov (Terraform Security)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra/terraform
+          framework: terraform
+          output_format: cli,sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Run tfsec (Terraform Security)
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: infra/terraform
+          soft_fail: true
+
+      - name: Run Trivy on Terraform
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      - name: Validate Dockerfiles
+        run: |
+          echo "🔍 Validating Dockerfiles..."
+          docker run --rm -i hadolint/hadolint < services/api/Dockerfile
+          docker run --rm -i hadolint/hadolint < apps/web/Dockerfile
+
+  # =============================================================================
+  # Secret Scanning
+  # =============================================================================
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "🔍 Scanning for hardcoded secrets..."
+          
+          # Check for common secret patterns
+          if grep -rn --include="*.py" --include="*.ts" --include="*.tsx" --include="*.js" \
+            -E '(password|secret|api_key|token|credential)\s*=\s*["\x27][^"\x27]{8,}' \
+            --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=__pycache__ --exclude-dir=.git \
+            --exclude='*.test.*' --exclude='*.spec.*' --exclude='conftest.py' --exclude='seed_*' \
+            . 2>/dev/null; then
+            echo "⚠️ Potential hardcoded secrets found"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+
+      - name: Check for sensitive files
+        run: |
+          echo "🔍 Checking for sensitive files..."
+          
+          # Check for .env files
+          if git ls-files | grep -E '\.env$'; then
+            echo "⚠️ .env file found in git"
+            exit 1
+          fi
+          
+          # Check for private keys
+          if git ls-files | grep -E '\.(pem|key|p12|pfx)$'; then
+            echo "⚠️ Private key file found in git"
+            exit 1
+          fi
+          
+          # Check for certificates
+          if git ls-files | grep -E '\.(crt|cer)$'; then
+            echo "⚠️ Certificate file found in git"
+            exit 1
+          fi
+          
+          echo "✅ No sensitive files detected"
+
+  # =============================================================================
+  # License Compliance
+  # =============================================================================
+  license-scan:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Check Python licenses
+        working-directory: services/api
+        run: |
+          echo "🔍 Checking Python licenses..."
+          pip install licensecheck
+          licensecheck --fail-on GPL-3.0 --format json > license-report.json || true
+        continue-on-error: true
+
+      - name: Check Node.js licenses
+        working-directory: apps/web
+        run: |
+          echo "🔍 Checking Node.js licenses..."
+          npx license-checker --json > license-report.json || true
+        continue-on-error: true
+
+      - name: Verify LICENSE file exists
+        run: |
+          if [ ! -f LICENSE ]; then
+            echo "❌ LICENSE file not found"
+            exit 1
+          fi
+          echo "✅ LICENSE file exists"
+
+      - name: Verify THIRD-PARTY-LICENSES.md exists
+        run: |
+          if [ ! -f THIRD-PARTY-LICENSES.md ]; then
+            echo "⚠️ THIRD-PARTY-LICENSES.md not found"
+          else
+            echo "✅ THIRD-PARTY-LICENSES.md exists"
+          fi
+
+  # =============================================================================
+  # Security Headers Check
+  # =============================================================================
+  security-headers:
+    name: Security Headers Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check security headers in responses
+        run: |
+          echo "🔍 Checking security headers configuration..."
+          
+          # Check if security headers are configured
+          if grep -r "X-Frame-Options\|Content-Security-Policy\|X-Content-Type-Options\|Strict-Transport-Security" .github/ infra/ services/ apps/ 2>/dev/null; then
+            echo "✅ Security headers found in configuration"
+          else
+            echo "⚠️ Security headers configuration not found"
+          fi
+
+  # =============================================================================
+  # Generate Final Report
+  # =============================================================================
+  security-report:
+    name: Security Report
+    runs-on: ubuntu-latest
+    needs: [code-security, dependency-scan, container-scan, infra-scan, secret-scan, license-scan, security-headers]
+    if: always()
+    steps:
+      - name: Generate Security Summary
+        run: |
+          echo "## 🔒 Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scan Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Security | ${{ needs.code-security.result == 'success' && '✅' || needs.code-security.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dependency Scan | ${{ needs.dependency-scan.result == 'success' && '✅' || needs.dependency-scan.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container Scan | ${{ needs.container-scan.result == 'success' && '✅' || needs.container-scan.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure Scan | ${{ needs.infra-scan.result == 'success' && '✅' || needs.infra-scan.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Scanning | ${{ needs.secret-scan.result == 'success' && '✅' || needs.secret-scan.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| License Compliance | ${{ needs.license-scan.result == 'success' && '✅' || needs.license-scan.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Headers | ${{ needs.security-headers.result == 'success' && '✅' || needs.security-headers.result == 'failure' && '❌' || '⚠️' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Download detailed reports from the workflow artifacts." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- [Security Policy](https://github.com/rohitkrpal13/theek-karo/blob/main/SECURITY.md)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Security Documentation](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/SECURITY.md)" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Security Advisories](https://github.com/rohitkrpal13/theek-karo/security/advisories)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload All Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: all-security-reports
+          path: |
+            **/*.sarif
+            **/*.json
+          retention-days: 90
