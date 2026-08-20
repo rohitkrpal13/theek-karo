@@ -724,13 +724,15 @@ async def get_heatmap_points(
         lon, lat = coords
         if min_lon <= lon <= max_lon and min_lat <= lat <= max_lat:
             weight = SEVERITY_WEIGHT.get(str(report.severity or "medium"), 1.0)
-            points.append({
-                "lon": lon,
-                "lat": lat,
-                "weight": weight,
-                "severity": str(report.severity or "medium"),
-                "category": cat.slug,
-            })
+            points.append(
+                {
+                    "lon": lon,
+                    "lat": lat,
+                    "weight": weight,
+                    "severity": str(report.severity or "medium"),
+                    "category": cat.slug,
+                }
+            )
             if len(points) >= limit:
                 break
 

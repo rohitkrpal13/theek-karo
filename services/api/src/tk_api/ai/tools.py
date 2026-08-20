@@ -654,7 +654,6 @@ async def tool_institution_deep_dive(
     """Official-persona Q&A: comprehensive institution briefing combining
     twin data, official baseline, recent reports, discrepancies, and SLA status."""
     from tk_api.cases.models import CivicCase
-    from tk_api.civic.models import Category
 
     try:
         inst_uuid = uuid.UUID(institution_id)
@@ -669,22 +668,27 @@ async def tool_institution_deep_dive(
     inst_type = None
     if inst.institution_type_id:
         from tk_api.institutions.models import InstitutionType
+
         it = await session.get(InstitutionType, inst.institution_type_id)
         inst_type = it.name_key if it else None
 
     # Get recent reports
     recent_reports = (
-        await session.execute(
-            select(Report)
-            .where(
-                Report.institution_id == inst_uuid,
-                Report.visibility == "public",
-                Report.deleted_at.is_(None),
+        (
+            await session.execute(
+                select(Report)
+                .where(
+                    Report.institution_id == inst_uuid,
+                    Report.visibility == "public",
+                    Report.deleted_at.is_(None),
+                )
+                .order_by(Report.created_at.desc())
+                .limit(5)
             )
-            .order_by(Report.created_at.desc())
-            .limit(5)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     reports_summary = [
         {
@@ -700,9 +704,7 @@ async def tool_institution_deep_dive(
     # Get open case count
     open_cases = await session.scalar(
         select(CivicCase.id).where(
-            CivicCase.report_id.in_(
-                select(Report.id).where(Report.institution_id == inst_uuid)
-            ),
+            CivicCase.report_id.in_(select(Report.id).where(Report.institution_id == inst_uuid)),
             CivicCase.status.not_in(("closed", "resolved")),
         )
     )
@@ -720,12 +722,16 @@ async def tool_institution_deep_dive(
 
     # Get discrepancies
     discrepancies = (
-        await session.execute(
-            select(InstitutionDiscrepancy).where(
-                InstitutionDiscrepancy.institution_id == inst_uuid
+        (
+            await session.execute(
+                select(InstitutionDiscrepancy).where(
+                    InstitutionDiscrepancy.institution_id == inst_uuid
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     discrepancy_summary = [
         {
@@ -803,7 +809,8 @@ async def tool_source_freshness(
         "latest_job_status": latest_job.status if latest_job else None,
         "latest_job_rows": latest_job.rows_added if latest_job else None,
         "freshness_note": (
-            f"Data was last synced {days_since_sync} days ago." if days_since_sync
+            f"Data was last synced {days_since_sync} days ago."
+            if days_since_sync
             else "No sync history available."
         ),
     }
@@ -816,8 +823,8 @@ async def tool_department_briefing(
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Public-safe department briefing with case counts, SLA compliance, escalations."""
-    from tk_api.cases.models import CivicCase, CaseEscalation, SlaInstance
-    from tk_api.departments.models import Department, DepartmentUser
+    from tk_api.cases.models import CaseEscalation, CivicCase
+    from tk_api.departments.models import Department
 
     departments_to_brief: list[Any] = []
     if department_id:
@@ -843,29 +850,36 @@ async def tool_department_briefing(
         breached_sla = sum(1 for c in cases if c.sla_status == "breached")
 
         # Count escalations
-        esc_count = await session.scalar(
-            select(CaseEscalation.id).where(
-                CaseEscalation.case_id.in_(select(CivicCase.id).where(
-                    CivicCase.primary_department_id == dept.id
-                ))
-            ).limit(100)
+        await session.scalar(
+            select(CaseEscalation.id)
+            .where(
+                CaseEscalation.case_id.in_(
+                    select(CivicCase.id).where(CivicCase.primary_department_id == dept.id)
+                )
+            )
+            .limit(100)
         )
 
-        result.append({
-            "id": str(dept.id),
-            "name": dept.name,
-            "slug": dept.slug,
-            "total_cases": total_cases,
-            "open_cases": open_cases,
-            "resolved_cases": resolved_cases,
-            "sla_breached": breached_sla,
-            "escalation_count": 0,  # simplified count
-        })
+        result.append(
+            {
+                "id": str(dept.id),
+                "name": dept.name,
+                "slug": dept.slug,
+                "total_cases": total_cases,
+                "open_cases": open_cases,
+                "resolved_cases": resolved_cases,
+                "sla_breached": breached_sla,
+                "escalation_count": 0,  # simplified count
+            }
+        )
 
     return {
         "departments": result,
         "count": len(result),
-        "disclaimer": "Aggregate department metrics; individual case details require authorization.",
+        "disclaimer": (
+            "Aggregate department metrics; individual case details"
+            " require authorization."
+        ),
     }
 
 

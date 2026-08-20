@@ -129,9 +129,7 @@ class ConsoleOtpSender:
 class TwilioSmsSender:
     """Production SMS channel: Twilio Messages API via standard-library HTTP."""
 
-    MESSAGES_URL = (
-        "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
-    )
+    MESSAGES_URL = "https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
 
     def __init__(self, account_sid: str, auth_token: str, from_number: str) -> None:
         self.account_sid = account_sid
@@ -150,9 +148,7 @@ class TwilioSmsSender:
             data=body,
             method="POST",
         )
-        credentials = base64.b64encode(
-            f"{self.account_sid}:{self.auth_token}".encode()
-        ).decode()
+        credentials = base64.b64encode(f"{self.account_sid}:{self.auth_token}".encode()).decode()
         request.add_header("Authorization", f"Basic {credentials}")
         request.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(request, timeout=15) as response:

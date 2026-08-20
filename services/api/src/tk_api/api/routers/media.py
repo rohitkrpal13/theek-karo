@@ -288,10 +288,16 @@ async def get_evidence_chain(
 ) -> Any:
     """Return the evidence chain for a report (tamper-evident SHA-256 chain)."""
     from sqlalchemy import select
+
     from tk_api.media.models import EvidenceChain
 
     rid = _parse_id(report_id, kind="report", error_kind="invalid_report_id")
-    stmt = select(EvidenceChain).where(EvidenceChain.report_id == rid).order_by(EvidenceChain.created_at.desc()).limit(1)
+    stmt = (
+        select(EvidenceChain)
+        .where(EvidenceChain.report_id == rid)
+        .order_by(EvidenceChain.created_at.desc())
+        .limit(1)
+    )
     chain = (await session.execute(stmt)).scalar_one_or_none()
     if chain is None:
         return {"report_id": report_id, "chain": None, "message": "No evidence chain found"}
@@ -318,6 +324,7 @@ async def get_report_media(
 ) -> Any:
     """List all media items for a report with before/after pairing info."""
     from sqlalchemy import select
+
     from tk_api.media.models import MediaObject, ReportMedia
 
     rid = _parse_id(report_id, kind="report", error_kind="invalid_report_id")
@@ -331,18 +338,20 @@ async def get_report_media(
 
     media_items = []
     for rm, mo in rows:
-        media_items.append({
-            "id": str(mo.id),
-            "report_media_kind": rm.kind,
-            "pair_group": rm.pair_group,
-            "pair_role": rm.pair_role,
-            "captured_at": rm.captured_at.isoformat() if rm.captured_at else None,
-            "mime_type": mo.mime_type,
-            "size_bytes": mo.size_bytes,
-            "duration_seconds": mo.duration_seconds,
-            "scan_status": mo.scan_status,
-            "status": mo.status,
-        })
+        media_items.append(
+            {
+                "id": str(mo.id),
+                "report_media_kind": rm.kind,
+                "pair_group": rm.pair_group,
+                "pair_role": rm.pair_role,
+                "captured_at": rm.captured_at.isoformat() if rm.captured_at else None,
+                "mime_type": mo.mime_type,
+                "size_bytes": mo.size_bytes,
+                "duration_seconds": mo.duration_seconds,
+                "scan_status": mo.scan_status,
+                "status": mo.status,
+            }
+        )
 
     return {
         "report_id": report_id,

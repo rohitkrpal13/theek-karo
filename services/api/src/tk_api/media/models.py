@@ -58,6 +58,7 @@ class ReportMedia(Base):
 
 class EvidenceChain(Base):
     """Phase 5 — Evidence v2: tamper-evident chain linking evidence items."""
+
     __tablename__ = "evidence_chains"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)

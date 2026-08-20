@@ -17,9 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tk_api.ai.providers import LLMProvider, StubLlmProvider
-from tk_api.ai.registry import ModelRouter, ModelSpec
-from tk_api.reports.models import Report, ReportComment
-
+from tk_api.ai.registry import ModelRouter
+from tk_api.reports.models import ReportComment
 
 # ---------------------------------------------------------------------------
 # Moderation Categories
@@ -42,6 +41,7 @@ MOD_CATEGORIES = {
 # ---------------------------------------------------------------------------
 # Content Moderation
 # ---------------------------------------------------------------------------
+
 
 async def moderate_content(
     session: AsyncSession,
@@ -66,7 +66,7 @@ async def moderate_content(
         f"You are a content moderation assistant for Theek Karo, "
         f"a civic issue reporting platform.\n\n"
         f"Analyze the following {content_type} content for moderation issues.\n"
-        f"Content:\n\"\"\"\n{content[:1000]}\n\"\"\"\n\n"
+        f'Content:\n"""\n{content[:1000]}\n"""\n\n'
         f"Check for these categories:\n"
         f"- spam: Commercial or irrelevant content\n"
         f"- harassment: Targeted attacks or bullying\n"

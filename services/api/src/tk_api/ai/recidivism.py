@@ -9,25 +9,23 @@ Every finding is a review trigger — never an automatic action.
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tk_api.civic.models import Category
 from tk_api.reports.models import Report
-
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 RECIDIVISM_WINDOW_DAYS = 180  # look back 6 months
-RECIDIVISM_MIN_REPEATS = 2   # at least 2 resolved + 1 new = recidivism
-RECIDIVISM_RADIUS_M = 200    # same institution or within 200m
+RECIDIVISM_MIN_REPEATS = 2  # at least 2 resolved + 1 new = recidivism
+RECIDIVISM_RADIUS_M = 200  # same institution or within 200m
 
 
 def _extract_coords(loc: Any) -> tuple[float, float] | None:
@@ -61,21 +59,18 @@ async def detect_recidivism(
     cutoff = now - timedelta(days=RECIDIVISM_WINDOW_DAYS)
 
     # Base query: resolved/closed reports in the window
-    base_stmt = (
-        select(
-            Report.institution_id,
-            Report.category_id,
-            Report.ticket_no,
-            Report.title,
-            Report.status,
-            Report.severity,
-            Report.created_at,
-            Report.location,
-        )
-        .where(
-            Report.deleted_at.is_(None),
-            Report.created_at >= cutoff,
-        )
+    base_stmt = select(
+        Report.institution_id,
+        Report.category_id,
+        Report.ticket_no,
+        Report.title,
+        Report.status,
+        Report.severity,
+        Report.created_at,
+        Report.location,
+    ).where(
+        Report.deleted_at.is_(None),
+        Report.created_at >= cutoff,
     )
 
     if geography_id:
@@ -101,15 +96,18 @@ async def detect_recidivism(
 
     # Detect recidivism: at least 2 resolved + 1 new/open
     signals = []
-    for key, group in groups.items():
+    for _key, group in groups.items():
         resolved = [r for r in group if r.status in ("resolved", "closed")]
-        open_reports = [r for r in group if r.status not in ("resolved", "closed", "rejected", "draft")]
+        open_reports = [
+            r for r in group if r.status not in ("resolved", "closed", "rejected", "draft")
+        ]
 
         if len(resolved) >= RECIDIVISM_MIN_REPEATS and len(open_reports) >= 1:
             # Get institution name
             inst_name = None
             if group[0].institution_id:
                 from tk_api.institutions.models import Institution
+
                 inst = await session.get(Institution, group[0].institution_id)
                 inst_name = inst.name if inst else None
 
@@ -122,25 +120,33 @@ async def detect_recidivism(
             severities = [r.severity for r in group if r.severity]
             high_count = sum(1 for s in severities if s in ("high", "critical"))
 
-            signals.append({
-                "institution_id": str(group[0].institution_id) if group[0].institution_id else None,
-                "institution_name": inst_name,
-                "category_id": str(group[0].category_id) if group[0].category_id else None,
-                "category_name": cat_name,
-                "resolved_count": len(resolved),
-                "open_count": len(open_reports),
-                "total_count": len(group),
-                "high_severity_count": high_count,
-                "first_report": group[-1].created_at.isoformat() if group[-1].created_at else None,
-                "latest_report": group[0].created_at.isoformat() if group[0].created_at else None,
-                "sample_tickets": [r.ticket_no for r in group[:5]],
-                "recidivism_score": min(1.0, (len(resolved) * 0.3 + high_count * 0.2)),
-                "recommendation": (
-                    "Systemic issue detected — department investigation recommended"
-                    if high_count >= 2
-                    else "Monitor for further recurrence"
-                ),
-            })
+            signals.append(
+                {
+                    "institution_id": str(group[0].institution_id)
+                    if group[0].institution_id
+                    else None,
+                    "institution_name": inst_name,
+                    "category_id": str(group[0].category_id) if group[0].category_id else None,
+                    "category_name": cat_name,
+                    "resolved_count": len(resolved),
+                    "open_count": len(open_reports),
+                    "total_count": len(group),
+                    "high_severity_count": high_count,
+                    "first_report": group[-1].created_at.isoformat()
+                    if group[-1].created_at
+                    else None,
+                    "latest_report": group[0].created_at.isoformat()
+                    if group[0].created_at
+                    else None,
+                    "sample_tickets": [r.ticket_no for r in group[:5]],
+                    "recidivism_score": min(1.0, (len(resolved) * 0.3 + high_count * 0.2)),
+                    "recommendation": (
+                        "Systemic issue detected — department investigation recommended"
+                        if high_count >= 2
+                        else "Monitor for further recurrence"
+                    ),
+                }
+            )
 
     # Sort by recidivism score descending
     signals.sort(key=lambda s: s["recidivism_score"], reverse=True)
@@ -164,21 +170,13 @@ async def get_recidivism_summary(
     geography_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     """Get a high-level summary of recidivism across the platform."""
-    result = await detect_recidivism(
-        session, geography_id=geography_id, limit=100
-    )
+    result = await detect_recidivism(session, geography_id=geography_id, limit=100)
 
     signals = result["signals"]
-    total_institutions = len(set(
-        s["institution_id"] for s in signals if s.get("institution_id")
-    ))
-    total_categories = len(set(
-        s["category_id"] for s in signals if s.get("category_id")
-    ))
+    total_institutions = len(set(s["institution_id"] for s in signals if s.get("institution_id")))
+    total_categories = len(set(s["category_id"] for s in signals if s.get("category_id")))
 
-    high_priority = sum(
-        1 for s in signals if s["recidivism_score"] >= 0.7
-    )
+    high_priority = sum(1 for s in signals if s["recidivism_score"] >= 0.7)
 
     return {
         "total_recurring_patterns": len(signals),

@@ -390,11 +390,13 @@ async def security_health(
     from tk_api.security.models import IncidentStatus
 
     incident_stmt = select(func.count(SecurityIncident.id)).where(
-        SecurityIncident.status.in_([
-            IncidentStatus.DETECTED,
-            IncidentStatus.INVESTIGATING,
-            IncidentStatus.CONTAINED,
-        ])
+        SecurityIncident.status.in_(
+            [
+                IncidentStatus.DETECTED,
+                IncidentStatus.INVESTIGATING,
+                IncidentStatus.CONTAINED,
+            ]
+        )
     )
     active_incidents = (await db.execute(incident_stmt)).scalar() or 0
 
@@ -463,16 +465,14 @@ async def get_slo_status(
     since = datetime.now(UTC) - timedelta(hours=1)
     from tk_api.ai.models import AiRun
 
-    recent_runs = (
-        await db.execute(
-            select(AiRun).where(AiRun.created_at >= since)
-        )
-    ).scalars().all()
+    recent_runs = (await db.execute(select(AiRun).where(AiRun.created_at >= since))).scalars().all()
 
     if recent_runs:
         latencies = [r.latency_ms for r in recent_runs if r.latency_ms]
         avg_latency = sum(latencies) / len(latencies) if latencies else 0
-        p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if len(latencies) >= 2 else avg_latency
+        p95_latency = (
+            sorted(latencies)[int(len(latencies) * 0.95)] if len(latencies) >= 2 else avg_latency
+        )
         error_count = sum(1 for r in recent_runs if r.status == "failed")
         error_rate = (error_count / len(recent_runs)) * 100 if recent_runs else 0
     else:

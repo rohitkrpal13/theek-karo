@@ -307,8 +307,9 @@ async def list_conversations(
     user: Annotated[Any, Depends(require_active())],
     limit: int = Query(default=20, ge=1, le=50),
 ) -> dict[str, Any]:
-    from tk_api.ai.models import AiConversation
     from sqlalchemy import select
+
+    from tk_api.ai.models import AiConversation
 
     stmt = (
         select(AiConversation)
@@ -331,17 +332,22 @@ async def list_conversations(
     }
 
 
-@ai_router.get("/conversations/{conversation_id}/messages", summary="Get conversation message history")
+@ai_router.get(
+    "/conversations/{conversation_id}/messages", summary="Get conversation message history"
+)
 async def get_conversation_messages(
     conversation_id: str,
     session: DbSession,
     user: Annotated[Any, Depends(require_active())],
     limit: int = Query(default=50, ge=1, le=100),
 ) -> dict[str, Any]:
-    from tk_api.ai.models import AiMessage
     from sqlalchemy import select
 
-    conv_uuid = _parse_id(conversation_id, kind="conversation", error_kind="invalid_conversation_id")
+    from tk_api.ai.models import AiMessage
+
+    conv_uuid = _parse_id(
+        conversation_id, kind="conversation", error_kind="invalid_conversation_id"
+    )
     stmt = (
         select(AiMessage)
         .where(AiMessage.conversation_id == conv_uuid)
@@ -374,8 +380,9 @@ async def create_conversation(
     user: Annotated[Any, Depends(require_active())],
 ) -> dict[str, Any]:
     """Create a new conversation container for multi-turn chat."""
-    from tk_api.ai.models import AiConversation
     from datetime import UTC, datetime
+
+    from tk_api.ai.models import AiConversation
 
     title = body.get("title", "New Conversation")
     conversation = AiConversation(
@@ -406,10 +413,13 @@ async def save_conversation_message(
     user: Annotated[Any, Depends(require_active())],
 ) -> dict[str, Any]:
     """Save a message (user or assistant) to a conversation for history."""
-    from tk_api.ai.models import AiConversation, AiMessage
     from datetime import UTC, datetime
 
-    conv_uuid = _parse_id(conversation_id, kind="conversation", error_kind="invalid_conversation_id")
+    from tk_api.ai.models import AiConversation, AiMessage
+
+    conv_uuid = _parse_id(
+        conversation_id, kind="conversation", error_kind="invalid_conversation_id"
+    )
     conv = await session.get(AiConversation, conv_uuid)
     if conv is None or (conv.user_id and str(conv.user_id) != str(user.id)):
         raise ApiError("conversation not found", 404, "conversation_not_found")
@@ -474,12 +484,18 @@ async def batch_triage_reports(
     user: Annotated[Any, Depends(require_active("moderator", "admin"))],
 ) -> dict[str, Any]:
     await rate_limit(
-        request, bucket="ai_triage", key=f"triage_batch:{client_ip(request)}", limit=10, window_seconds=60
+        request,
+        bucket="ai_triage",
+        key=f"triage_batch:{client_ip(request)}",
+        limit=10,
+        window_seconds=60,
     )
     from tk_api.ai.triage import batch_triage
 
     report_ids_raw = body.get("report_ids", [])
-    report_ids = [_parse_id(r, kind="report", error_kind="invalid_report_id") for r in report_ids_raw[:10]]
+    report_ids = [
+        _parse_id(r, kind="report", error_kind="invalid_report_id") for r in report_ids_raw[:10]
+    ]
     return await batch_triage(session, report_ids=report_ids)
 
 
@@ -495,7 +511,11 @@ async def get_recidivism(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> dict[str, Any]:
     await rate_limit(
-        request, bucket="ai_recidivism", key=f"recidivism:{client_ip(request)}", limit=30, window_seconds=60
+        request,
+        bucket="ai_recidivism",
+        key=f"recidivism:{client_ip(request)}",
+        limit=30,
+        window_seconds=60,
     )
     from tk_api.ai.recidivism import detect_recidivism
 
@@ -517,7 +537,11 @@ async def get_recidivism_summary(
     geography_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> dict[str, Any]:
     await rate_limit(
-        request, bucket="ai_recidivism", key=f"recidivism_sum:{client_ip(request)}", limit=30, window_seconds=60
+        request,
+        bucket="ai_recidivism",
+        key=f"recidivism_sum:{client_ip(request)}",
+        limit=30,
+        window_seconds=60,
     )
     from tk_api.ai.recidivism import get_recidivism_summary as do_summary
 
@@ -535,7 +559,11 @@ async def moderate_content_endpoint(
     user: Annotated[Any, Depends(require_active("moderator", "admin"))],
 ) -> dict[str, Any]:
     await rate_limit(
-        request, bucket="ai_moderate", key=f"moderate:{client_ip(request)}", limit=60, window_seconds=60
+        request,
+        bucket="ai_moderate",
+        key=f"moderate:{client_ip(request)}",
+        limit=60,
+        window_seconds=60,
     )
     from tk_api.ai.moderation import moderate_content
 
@@ -565,7 +593,11 @@ async def moderate_report_comments_endpoint(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> dict[str, Any]:
     await rate_limit(
-        request, bucket="ai_moderate", key=f"mod_report:{client_ip(request)}", limit=20, window_seconds=60
+        request,
+        bucket="ai_moderate",
+        key=f"mod_report:{client_ip(request)}",
+        limit=20,
+        window_seconds=60,
     )
     from tk_api.ai.moderation import moderate_report_comments
 

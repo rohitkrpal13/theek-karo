@@ -90,9 +90,7 @@ class SmtpEmailProvider:
         self.password = password
         self.starttls = starttls
 
-    def send(
-        self, *, to_contact: str, subject: str, body: str, message_id: str
-    ) -> DeliveryResult:
+    def send(self, *, to_contact: str, subject: str, body: str, message_id: str) -> DeliveryResult:
         try:
             self._send_sync(to_contact, subject, body)
             return DeliveryResult(provider_message_id=message_id)
@@ -126,9 +124,7 @@ def build_providers(settings: Settings) -> dict[str, Any]:
         providers["email"] = ConsoleEmailProvider()
     elif settings.email_provider == "smtp":
         if not (settings.smtp_host and settings.smtp_from):
-            raise ValueError(
-                "TK_EMAIL_PROVIDER=smtp requires TK_SMTP_HOST and TK_SMTP_FROM."
-            )
+            raise ValueError("TK_EMAIL_PROVIDER=smtp requires TK_SMTP_HOST and TK_SMTP_FROM.")
         providers["email"] = SmtpEmailProvider(
             host=settings.smtp_host,
             port=settings.smtp_port,

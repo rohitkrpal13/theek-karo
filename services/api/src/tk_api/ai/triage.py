@@ -12,14 +12,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tk_api.ai.providers import LLMProvider, StubLlmProvider
-from tk_api.ai.registry import ModelRouter, ModelSpec
+from tk_api.ai.registry import ModelRouter
 from tk_api.civic.models import Category, IssueType
 from tk_api.reports.models import Report
-
 
 # ---------------------------------------------------------------------------
 # Triage Decision Record
@@ -55,7 +53,9 @@ async def triage_report(
 
     # Gather context
     category = await session.get(Category, report.category_id) if report.category_id else None
-    issue_type = await session.get(IssueType, report.issue_type_id) if report.issue_type_id else None
+    issue_type = (
+        await session.get(IssueType, report.issue_type_id) if report.issue_type_id else None
+    )
 
     model_spec = router.select_model("classification")
 
@@ -94,9 +94,7 @@ async def triage_report(
             max_tokens=1000,
         )
         cost = float(
-            router.calculate_cost(
-                model_spec.model_id, response.tokens_in, response.tokens_out
-            )
+            router.calculate_cost(model_spec.model_id, response.tokens_in, response.tokens_out)
         )
 
         # Parse the response into structured fields (simplified for stub)
@@ -158,9 +156,7 @@ async def batch_triage(
     """Run triage on multiple reports. Returns batch results with summary."""
     results = []
     for rid in report_ids[:limit]:
-        result = await triage_report(
-            session, report_id=rid, provider=provider, router=router
-        )
+        result = await triage_report(session, report_id=rid, provider=provider, router=router)
         results.append(result)
 
     escalated = sum(1 for r in results if r.get("requires_human_review"))
