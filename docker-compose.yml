@@ -1,0 +1,147 @@
+name: theek-karo
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: theek_karo
+      POSTGRES_USER: tk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tk_dev_password}
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tk -d theek_karo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tk_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tk_minio_password}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./services/api
+    environment:
+      TK_ENV: dev
+      TK_LOG_LEVEL: INFO
+      TK_DATABASE_URL: postgresql+asyncpg://tk:${POSTGRES_PASSWORD:-tk_dev_password}@postgres:5432/theek_karo
+      TK_MEDIA_STORAGE_MODE: minio
+      TK_MEDIA_MINIO_ENDPOINT: minio:9000
+      TK_MEDIA_MINIO_PUBLIC_ENDPOINT: 127.0.0.1:9000
+      TK_MEDIA_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-tk_minio}
+      TK_MEDIA_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-tk_minio_password}
+      TK_MEDIA_MINIO_BUCKET: tk-media
+      TK_AI_AUTO_ANALYSIS: "true"
+      TK_CELERY_ENABLED: "true"
+      TK_CELERY_BROKER_URL: redis://redis:6379/1
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)"
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 10
+
+  worker:
+    build:
+      context: ./services/api
+    command: /app/.venv/bin/celery -A tk_api.worker:celery_app worker --beat -l info --pool=solo
+    environment:
+      TK_ENV: dev
+      TK_LOG_LEVEL: INFO
+      TK_DATABASE_URL: postgresql+asyncpg://tk:${POSTGRES_PASSWORD:-tk_dev_password}@postgres:5432/theek_karo
+      TK_CELERY_BROKER_URL: redis://redis:6379/1
+      TK_MEDIA_STORAGE_MODE: minio
+      TK_MEDIA_MINIO_ENDPOINT: minio:9000
+      TK_MEDIA_MINIO_PUBLIC_ENDPOINT: minio:9000
+      TK_MEDIA_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-tk_minio}
+      TK_MEDIA_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-tk_minio_password}
+      TK_MEDIA_MINIO_BUCKET: tk-media
+      TK_AI_AUTO_ANALYSIS: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/celery
+        - -A
+        - tk_api.worker:celery_app
+        - inspect
+        - ping
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-dev-grafana-password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3031:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  pgdata:
+  miniodata:

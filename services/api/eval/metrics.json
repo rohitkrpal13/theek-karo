@@ -1,0 +1,14 @@
+{
+  "gateway": "stub",
+  "model_id": "deepseek-chat",
+  "golden_size": 12,
+  "category_accuracy": 0.6667,
+  "duplicate_pair_similarity": 0.1579,
+  "dissimilar_pair_similarity": 0.0435,
+  "per_category_accuracy": {
+    "road": 1.0,
+    "sanitation": 0.5,
+    "school": 0.4,
+    "water": 1.0
+  }
+}

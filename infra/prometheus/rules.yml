@@ -1,0 +1,46 @@
+# SLO-derived alert rules (docs/SLOs.md — Phase 10)
+groups:
+  - name: tk-api-slos
+    rules:
+      - alert: TkApiP95LatencySLO
+        expr: |
+          histogram_quantile(0.95,
+            sum by (route_group, method) (
+              rate(tk_api_request_duration_seconds_bucket[5m])
+            )
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "API p95 latency breached 500ms (route_group={{ $labels.route_group }})"
+          runbook: docs/RUNBOOKS.md#api-latency
+
+      - alert: TkApiErrorRateHigh
+        expr: |
+          sum(rate(tk_api_requests_total{status_class=~"5xx"}[5m]))
+            / clamp_min(sum(rate(tk_api_requests_total[5m])), 1) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx rate above 5%"
+          runbook: docs/RUNBOOKS.md#api-errors
+
+      - alert: TkApiTargetDown
+        expr: up{job="tk-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "tk-api scrape target is down"
+          runbook: docs/RUNBOOKS.md#api-down
+
+      - alert: TkWorkerQueueBacklog
+        expr: tk_api_queue_backlog > 500
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "notification queue backlog above 500 rows"
+          runbook: docs/RUNBOOKS.md#queue-backlog

@@ -1,0 +1,71 @@
+{
+  "report_id": "78428f3a-991e-4985-ab75-4e4a871ed20f",
+  "title": "Weekly civic brief",
+  "scope": "PUBLIC",
+  "generated_at": "2026-08-18T16:37:07.138671+00:00",
+  "sections": [
+    {
+      "section": "trends",
+      "generated_at": "2026-08-18T16:37:07.124930+00:00",
+      "items": [
+        {
+          "metric": "reports",
+          "geography_id": null,
+          "category_slug": null,
+          "interval": "week",
+          "observation_period": {
+            "start": "2026-07-19T16:37:07.119850+00:00",
+            "end": "2026-08-18T16:37:07.119850+00:00"
+          },
+          "comparison": {
+            "period_label": "Previous 30 days",
+            "start": "2026-07-19T16:37:07.119850Z",
+            "end": "2026-08-18T16:37:07.119850Z",
+            "count": 0,
+            "change_count": 0,
+            "change_pct": null,
+            "direction": "insufficient_data",
+            "denominator": "public reports in the previous previous 30 days",
+            "coverage_note": "Counts use public reports only. No causation is inferred from this comparison."
+          },
+          "series": [],
+          "seasonality": [],
+          "limitations": [
+            "Reporting volume reflects community activity and awareness as well as issues.",
+            "The cause of any change is not determined by this analysis."
+          ]
+        }
+      ],
+      "note": "Deterministic period-over-period comparison on comparable windows. Geography: National. Direction thresholds: \u00b110%. No causation is inferred."
+    },
+    {
+      "section": "anomalies",
+      "generated_at": "2026-08-18T16:37:07.138638+00:00",
+      "items": [],
+      "note": "An anomaly is 'something unusual was detected' \u2014 never an accusation; it is a trigger for human review."
+    },
+    {
+      "section": "clusters",
+      "generated_at": "2026-08-18T16:37:07.132480+00:00",
+      "items": [],
+      "note": "Clusters group related public reports for review. They never delete or merge individual reports; duplication decisions stay human."
+    },
+    {
+      "section": "recurring_issues",
+      "generated_at": "2026-08-18T16:37:07.133739+00:00",
+      "items": [],
+      "note": "A recurring-issue pattern means the same category appeared at the same institution/geography in several distinct months. It does not by itself prove an unresolved problem \u2014 it is a review trigger."
+    },
+    {
+      "section": "data_freshness",
+      "generated_at": "2026-08-18T16:37:07.137402+00:00",
+      "items": []
+    },
+    {
+      "section": "data_coverage_gaps",
+      "generated_at": "2026-08-18T16:37:07.138602+00:00",
+      "items": [],
+      "note": "Coverage counts institutions that carry an official-data comparison (InstitutionDiscrepancy row). Low coverage means the institution type lacks official data imports \u2014 candidates for new source pings, not evidence of failure."
+    }
+  ]
+}

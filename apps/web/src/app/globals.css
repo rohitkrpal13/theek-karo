@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* Theek Karo design tokens (see src/theme/tokens.ts) — mapped for Tailwind. */
+@theme {
+  --color-primary: #157f4a;
+  --color-primary-strong: #0e6b3d;
+  --color-primary-soft: #e7f4ec;
+  --color-secondary: #c98a16;
+  --color-secondary-soft: #fbf3e0;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-ink: #171a17;
+  --color-ink-muted: #5a6158;
+  --color-line: #dfe3db;
+  --color-success: #0e7a43;
+  --color-warning: #b7791f;
+  --color-error: #b3261e;
+  --color-info: #1d6fa3;
+  --color-sev-low: #0e7a43;
+  --color-sev-medium: #b7791f;
+  --color-sev-high: #d05b12;
+  --color-sev-critical: #b3261e;
+  --color-tier-official: #1d4ed8;
+  --color-tier-verified: #0e7a43;
+  --color-tier-citizen: #7c5bb8;
+  --color-tier-ai: #64748b;
+  --color-tier-unverified: #9aa0a6;
+  --color-focusring: #1d4ed8;
+  --color-page: #f7f8f6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-page: #121512;
+    --color-surface: #1b1f1b;
+    --color-surface-raised: #232823;
+    --color-ink: #edf0ea;
+    --color-ink-muted: #a9b0a5;
+    --color-line: #333a33;
+    --color-primary: #3aa06c;
+    --color-primary-soft: #14301f;
+    --color-secondary-soft: #332a10;
+  }
+}
+:root[data-theme="dark"] {
+  --color-page: #121512;
+  --color-surface: #1b1f1b;
+  --color-surface-raised: #232823;
+  --color-ink: #edf0ea;
+  --color-ink-muted: #a9b0a5;
+  --color-line: #333a33;
+  --color-primary: #3aa06c;
+  --color-primary-soft: #14301f;
+  --color-secondary-soft: #332a10;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: "Inter", "system-ui", "Segoe UI", Arial, sans-serif;
+  overscroll-behavior-y: none;
+}
+:focus-visible {
+  outline: 3px solid var(--color-focusring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--color-ink);
+  color: var(--color-page);
+  padding: 0.75rem 1rem;
+  z-index: 50;
+}
+.skip-link:focus {
+  left: 0;
+}
+::selection {
+  background: var(--color-primary-soft);
+}

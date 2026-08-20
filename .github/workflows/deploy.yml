@@ -1,0 +1,113 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: staging or prod
+        required: true
+        default: staging
+  push:
+    branches: [main]
+    paths:
+      - "services/api/**"
+      - "apps/web/**"
+
+permissions:
+  id-token: write # OIDC to AWS
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build + push API
+        run: |
+          docker build -t $ECR_REGISTRY/tk-api:${{ github.sha }} -t $ECR_REGISTRY/tk-api:latest services/api
+          docker push $ECR_REGISTRY/tk-api --all-tags
+      - name: Build + push WEB
+        run: |
+          docker build -t $ECR_REGISTRY/tk-web:${{ github.sha }} -t $ECR_REGISTRY/tk-web:latest apps/web
+          docker push $ECR_REGISTRY/tk-web --all-tags
+
+  migrations:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    needs: build-and-push
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS + run migrations on the target DB
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Run alembic upgrade head (target DB)
+        run: |
+          pip install "sqlalchemy[asyncio]" asyncpg alembic
+          export TK_DATABASE_URL="${{ secrets.TARGET_DATABASE_URL }}"
+          cd services/api && alembic upgrade head
+
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    needs: migrations
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, worker, web]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Update the ECS service (pinned image)
+        run: |
+          CLUSTER="tk-${{ inputs.environment || 'staging' }}"
+          TASK_DEF_NAME="tk-${{ matrix.service }}-task"
+          NEW_TASK=$(
+            aws ecs register-task-definition \
+              --family "$TASK_DEF_NAME" \
+              --cli-input-json "$(aws ecs describe-task-definition --task-definition "$TASK_DEF_NAME" --query 'taskDefinition' --output json |
+                jq 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | .containerDefinitions[0].image=\"${{ env.ECR_REGISTRY }}/tk-${{ matrix.service }}:${{ github.sha }}\"')" \
+              --query 'taskDefinition.taskDefinitionArn' --output text
+          )
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "tk-${{ matrix.service }}" \
+            --task-definition "$NEW_TASK" \
+            --force-new-deployment
+      - name: Wait for stable service
+        timeout-minutes: 15
+        run: |
+          CLUSTER="tk-${{ inputs.environment || 'staging' }}"
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "tk-${{ matrix.service }}"
+      - name: Record deploy revision
+        run: echo "tk-${{ matrix.service }} deployed revision ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+  smoke:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'staging' }}
+    needs: deploy
+    steps:
+      - name: Smoke the deployed endpoint
+        run: |
+          curl -sf --retry 10 --retry-delay 5 "${{ secrets.SMOKE_URL }}/readyz" | grep -q '"ok"'
+          curl -sf "${{ secrets.SMOKE_URL }}/api/v1/version"
+          curl -sf "${{ secrets.SMOKE_URL }}/api/v1/civic/categories" | grep -q school
