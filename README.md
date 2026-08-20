@@ -224,6 +224,22 @@ Full deployment guide: [`docs/CLOUD-DEPLOYMENT-GUIDE.md`](docs/CLOUD-DEPLOYMENT-
 
 - **CI** (`.github/workflows/ci.yml`): Lint, typecheck, test on every PR
 - **Deploy** (`.github/workflows/deploy.yml`): Build & deploy to staging/prod on merge
+- **Release** (`.github/workflows/release.yml`): Automated release pipeline
+- **Tag Release** (`.github/workflows/tag-release.yml`): Auto-create release on tag push
+
+### Creating a Release
+
+```bash
+# Option 1: GitHub Actions UI
+# Go to Actions → Release → Run workflow
+
+# Option 2: Tag-based
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+
+# Option 3: Local script
+./.github/scripts/create-release.sh 1.0.0 --deploy staging
+```
 
 ## Documentation
 
@@ -264,19 +280,169 @@ Full roadmap: [`docs/ROADMAP.md`](docs/ROADMAP.md)
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes following existing conventions
-4. Run checks: `make lint && make typecheck && make test`
-5. Commit with a descriptive message
-6. Push and create a Pull Request
+We welcome contributions! Please follow these steps:
 
-### Code Quality
+### 1. Setup Development Environment
 
-- **Linting**: Ruff (Python), ESLint (TypeScript)
-- **Type Checking**: mypy strict (Python), TypeScript strict (frontend)
-- **Testing**: pytest (670+ tests), Playwright (E2E)
-- **Formatting**: Ruff format (Python), Prettier (TypeScript)
+```bash
+# Clone the repo
+git clone https://github.com/rohitkrpal13/theek-karo.git
+cd theek-karo
+
+# Install git hooks (recommended)
+./scripts/setup-git-hooks.sh
+
+# Or manually install pre-commit
+pip install pre-commit
+pre-commit install
+pre-commit install --hook-type commit-msg
+```
+
+### 2. Create a Feature Branch
+
+```bash
+git checkout -b feature/amazing-feature
+```
+
+### 3. Make Your Changes
+
+Follow the project conventions:
+
+- **Python**: Ruff for linting/formatting, mypy for type checking
+- **TypeScript**: ESLint for linting, Prettier for formatting
+- **Commits**: [Conventional Commits](https://www.conventionalcommits.org/) format
+
+### 4. Run Quality Checks
+
+```bash
+# Backend
+make lint            # Ruff lint
+make typecheck       # Mypy type checking
+make test            # Unit tests
+
+# Frontend
+make web-lint        # ESLint + TypeScript
+make web-build       # Build check
+
+# Or run all checks
+pre-commit run --all-files
+```
+
+### 5. Commit Your Changes
+
+```bash
+# Stage changes
+git add .
+
+# Commit with conventional format
+git commit -m "feat(reports): add video evidence support"
+
+# Or use commitizen
+cz commit
+```
+
+**Commit Message Format:**
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation
+- `refactor`: Code restructuring
+- `test`: Adding tests
+- `chore`: Maintenance
+
+**Examples:**
+```bash
+git commit -m "feat(reports): add video evidence support"
+git commit -m "fix(auth): handle expired refresh tokens"
+git commit -m "docs(api): update authentication examples"
+git commit -m "refactor(cases): extract SLA evaluation"
+```
+
+### 6. Push and Create a Pull Request
+
+```bash
+git push origin feature/amazing-feature
+```
+
+Then create a Pull Request on GitHub.
+
+### Code Quality Tools
+
+| Tool | Purpose | Command |
+|------|---------|--------|
+| **Ruff** | Python linting + formatting | `make lint && make format` |
+| **mypy** | Python type checking | `make typecheck` |
+| **ESLint** | TypeScript linting | `make web-lint` |
+| **Prettier** | Code formatting | Auto-formats on save |
+| **pytest** | Python testing | `make test` |
+| **Playwright** | E2E testing | `make web-e2e` |
+| **pre-commit** | Git hooks | `pre-commit run --all-files` |
+| **commitlint** | Commit message validation | `npx commitlint` |
+
+### Git Hooks
+
+This project uses pre-commit hooks to ensure code quality:
+
+**Pre-commit hooks:**
+- Trailing whitespace removal
+- End-of-file fixer
+- YAML/JSON/TOML validation
+- Large file detection (>500KB)
+- Secret detection
+- Ruff linting (Python)
+- ESLint (TypeScript)
+- Bandit security scanning
+- Hadolint (Dockerfiles)
+- Terraform formatting
+
+**Pre-push hooks:**
+- Large file detection
+- Secret scanning
+- TODO/FIXME warnings
+
+**Post-checkout hooks:**
+- Branch information
+- Dependency update reminders
+- Migration detection
+
+**Commit message validation:**
+- Conventional Commits format
+- Type/scope enforcement
+- Length limits (72 chars description, 100 chars header)
+
+### Pull Request Process
+
+1. Ensure all CI checks pass
+2. Update documentation if needed
+3. Add tests for new features
+4. Request review from CODEOWNERS
+5. Address review feedback
+6. Merge after approval
+
+### Branch Protection
+
+The `main` branch is protected:
+- ✅ Require pull request reviews
+- ✅ Require status checks to pass
+- ✅ Require branches to be up to date
+- ✅ Require conversation resolution
+- ✅ Require CODEOWNERS review
+
+## Security
+
+For security vulnerabilities, please see our [Security Policy](SECURITY.md).
+
+- 🔒 **Vulnerability Reporting**: [GitHub Security Advisories](https://github.com/rohitkrpal13/theek-karo/security/advisories)
+- 📧 **Email**: security@theek-karo.dev
+- 🛡️ **Security Documentation**: [`docs/SECURITY.md`](docs/SECURITY.md)
 
 ## License
 
