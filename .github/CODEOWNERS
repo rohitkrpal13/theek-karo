@@ -1,0 +1,193 @@
+# CODEOWNERS - Theek Karo
+# This file defines code ownership for automatic review assignments.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# =============================================================================
+# Default Owners
+# =============================================================================
+
+# Default owner for everything
+* @rohitkrpal13
+
+# =============================================================================
+# Documentation
+# =============================================================================
+
+# Documentation files
+docs/ @rohitkrpal13
+*.md @rohitkrpal13
+LICENSE @rohitkrpal13
+CONTRIBUTING.md @rohitkrpal13
+SECURITY.md @rohitkrpal13
+CHANGELOG.md @rohitkrpal13
+
+# =============================================================================
+# Frontend (Next.js)
+# =============================================================================
+
+# Frontend application
+apps/web/ @rohitkrpal13
+
+# Frontend configuration
+apps/web/package.json @rohitkrpal13
+apps/web/tsconfig.json @rohitkrpal13
+apps/web/next.config.js @rohitkrpal13
+apps/web/tailwind.config.js @rohitkrpal13
+
+# =============================================================================
+# Backend (FastAPI)
+# =============================================================================
+
+# API service
+services/api/ @rohitkrpal13
+
+# Backend configuration
+services/api/pyproject.toml @rohitkrpal13
+services/api/alembic.ini @rohitkrpal13
+services/api/Dockerfile @rohitkrpal13
+
+# Database migrations (require careful review)
+services/api/alembic/ @rohitkrpal13
+
+# =============================================================================
+# Core Modules (High-Security)
+# =============================================================================
+
+# Authentication & Authorization
+services/api/src/tk_api/identity/ @rohitkrpal13
+services/api/src/tk_api/core/auth* @rohitkrpal13
+
+# Security-critical code
+services/api/src/tk_api/security/ @rohitkrpal13
+services/api/src/tk_api/core/security* @rohitkrpal13
+
+# User management
+services/api/src/tk_api/users/ @rohitkrpal13
+
+# =============================================================================
+# Business Logic
+# =============================================================================
+
+# Reports & Cases
+services/api/src/tk_api/reports/ @rohitkrpal13
+services/api/src/tk_api/cases/ @rohitkrpal13
+services/api/src/tk_api/resolution/ @rohitkrpal13
+
+# Departments & Government
+services/api/src/tk_api/departments/ @rohitkrpal13
+services/api/src/tk_api/government/ @rohitkrpal13
+
+# Geography & Maps
+services/api/src/tk_api/geography/ @rohitkrpal13
+services/api/src/tk_api/maps/ @rohitkrpal13
+
+# =============================================================================
+# AI & Intelligence
+# =============================================================================
+
+# AI Gateway & Tools
+services/api/src/tk_api/ai/ @rohitkrpal13
+services/api/src/tk_api/intelligence/ @rohitkrpal13
+
+# AI Security (Critical)
+services/api/src/tk_api/ai/security* @rohitkrpal13
+services/api/src/tk_api/ai/tools* @rohitkrpal13
+
+# =============================================================================
+# Data & Analytics
+# =============================================================================
+
+# Analytics
+services/api/src/tk_api/analytics/ @rohitkrpal13
+
+# Data Trust & Provenance
+services/api/src/tk_api/data_trust/ @rohitkrpal13
+
+# Search
+services/api/src/tk_api/search/ @rohitkrpal13
+
+# =============================================================================
+# Community & Moderation
+# =============================================================================
+
+# Community features
+services/api/src/tk_api/community/ @rohitkrpal13
+
+# Moderation (Security-sensitive)
+services/api/src/tk_api/moderation/ @rohitkrpal13
+
+# =============================================================================
+# Infrastructure & DevOps
+# =============================================================================
+
+# Docker
+docker-compose.yml @rohitkrpal13
+services/api/Dockerfile @rohitkrpal13
+apps/web/Dockerfile @rohitkrpal13
+
+# Terraform (Infrastructure as Code)
+infra/terraform/ @rohitkrpal13
+
+# CI/CD Workflows
+.github/workflows/ @rohitkrpal13
+
+# Monitoring
+infra/prometheus/ @rohitkrpal13
+infra/grafana/ @rohitkrpal13
+
+# =============================================================================
+# Security & Secrets
+# =============================================================================
+
+# Security configuration
+.env.example @rohitkrpal13
+.env*.example @rohitkrpal13
+.github/dependabot.yml @rohitkrpal13
+
+# Never commit real secrets!
+.env @rohitkrpal13
+.env.local @rohitkrpal13
+.env.production @rohitkrpal13
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+# Test files
+*_test.py @rohitkrpal13
+test_*.py @rohitkrpal13
+*.test.ts @rohitkrpal13
+*.test.tsx @rohitkrpal13
+conftest.py @rohitkrpal13
+
+# Test configuration
+services/api/tests/ @rohitkrpal13
+apps/web/src/**/*.test.* @rohitkrpal13
+
+# =============================================================================
+# Scripts & Tooling
+# =============================================================================
+
+# Build and deployment scripts
+scripts/ @rohitkrpal13
+.github/scripts/ @rohitkrpal13
+
+# Package management
+package.json @rohitkrpal13
+package-lock.json @rohitkrpal13
+services/api/uv.lock @rohitkrpal13
+
+# =============================================================================
+# Media & Assets
+# =============================================================================
+
+# Static assets
+apps/web/public/ @rohitkrpal13
+
+# =============================================================================
+# Database
+# =============================================================================
+
+# Database schemas and migrations
+services/api/alembic/versions/ @rohitkrpal13
+docs/DATABASE.md @rohitkrpal13
