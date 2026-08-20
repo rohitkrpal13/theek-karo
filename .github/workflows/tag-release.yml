@@ -1,0 +1,88 @@
+name: Tag Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION"
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Try to extract changelog for this version
+          CHANGELOG=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md 2>/dev/null || echo "")
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="## Changes
+
+$(git log --oneline -20 --since='2026-01-01' | sed 's/^/- /')"
+          fi
+
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            ## 🚀 Release ${{ github.ref_name }}
+
+            ${{ steps.changelog.outputs.changelog }}
+
+            ---
+
+            ## 📦 Installation
+
+            ```bash
+            # Docker
+            docker pull ${{ vars.ECR_REGISTRY }}/tk-api:${{ steps.version.outputs.version }}
+
+            # Or build from source
+            git clone https://github.com/rohitkrpal13/theek-karo.git
+            cd theek-karo
+            make up
+            ```
+
+            ## 📚 Documentation
+
+            - [README](https://github.com/rohitkrpal13/theek-karo/blob/main/README.md)
+            - [API Reference](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/API.md)
+            - [Architecture](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/ARCHITECTURE.md)
+            - [Contributing](https://github.com/rohitkrpal13/theek-karo/blob/main/CONTRIBUTING.md)
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release Created!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tag**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release URL**: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY

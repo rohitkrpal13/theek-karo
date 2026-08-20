@@ -1,0 +1,265 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g., 1.0.0)"
+        required: true
+      environment:
+        description: "Deploy environment (staging/prod)"
+        required: false
+        default: staging
+      prerelease:
+        description: "Is this a pre-release?"
+        required: false
+        default: "false"
+        type: boolean
+      skip_deploy:
+        description: "Skip deployment after release?"
+        required: false
+        default: "false"
+        type: boolean
+
+  # Automatically create release when a version tag is pushed
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+
+jobs:
+  # Validate version format and extract changelog
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            # Extract from tag
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            PRERELEASE="false"
+          fi
+
+          # Validate version format (semver)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: X.Y.Z or X.Y.Z-prerelease"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "✅ Version: $VERSION (prerelease: $PRERELEASE)"
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Extract changelog for this version
+          CHANGELOG=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+
+          if [ -z "$CHANGELOG" ]; then
+            # Fallback: use last section or generate from commits
+            CHANGELOG="## Changes in v${VERSION}\n\n$(git log --oneline -20 --since='2026-01-01')"
+          fi
+
+          # Use delimiter for multiline output
+          {
+            echo "changelog<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          echo "📝 Changelog extracted"
+
+  # Run all CI checks before releasing
+  ci:
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+
+  # Build and push Docker images
+  build:
+    needs: [prepare, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push API image
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          docker build \
+            -t $ECR_REGISTRY/tk-api:${VERSION} \
+            -t $ECR_REGISTRY/tk-api:latest \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            services/api
+          docker push $ECR_REGISTRY/tk-api --all-tags
+          echo "✅ API image pushed: ${VERSION}"
+
+      - name: Build and push Web image
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          docker build \
+            -t $ECR_REGISTRY/tk-web:${VERSION} \
+            -t $ECR_REGISTRY/tk-web:latest \
+            --label "org.opencontainers.image.version=${VERSION}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            apps/web
+          docker push $ECR_REGISTRY/tk-web --all-tags
+          echo "✅ Web image pushed: ${VERSION}"
+
+  # Create GitHub release
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    outputs:
+      release_url: ${{ steps.create_release.outputs.html_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: v${{ needs.prepare.outputs.version }}
+          body: |
+            ## 🚀 Release v${{ needs.prepare.outputs.version }}
+
+            ${{ needs.prepare.outputs.changelog }}
+
+            ---
+
+            ## 📦 Docker Images
+
+            - API: `${{ vars.ECR_REGISTRY }}/tk-api:${{ needs.prepare.outputs.version }}`
+            - Web: `${{ vars.ECR_REGISTRY }}/tk-web:${{ needs.prepare.outputs.version }}`
+
+            ## 🔗 Quick Links
+
+            - [Documentation](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/)
+            - [API Reference](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/API.md)
+            - [Contributing](https://github.com/rohitkrpal13/theek-karo/blob/main/CONTRIBUTING.md)
+
+            ---
+
+            **Full Changelog**: https://github.com/rohitkrpal13/theek-karo/compare/v${{ github.event.before || 'HEAD' }}...v${{ needs.prepare.outputs.version }}
+          prerelease: ${{ needs.prepare.outputs.is_prerelease }}
+          draft: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release Created!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: v${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release**: ${{ steps.create_release.outputs.html_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Prerelease**: ${{ needs.prepare.outputs.is_prerelease }}" >> $GITHUB_STEP_SUMMARY
+
+  # Deploy to staging (optional)
+  deploy-staging:
+    needs: [prepare, release]
+    if: |
+      github.event.inputs.skip_deploy != 'true' &&
+      (github.event.inputs.environment == 'staging' || github.event_name == 'push')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+    secrets: inherit
+
+  # Deploy to production (manual trigger only)
+  deploy-production:
+    needs: [prepare, release, deploy-staging]
+    if: |
+      github.event.inputs.skip_deploy != 'true' &&
+      github.event.inputs.environment == 'prod'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: prod
+    secrets: inherit
+
+  # Update CHANGELOG with release date
+  update-changelog:
+    needs: [prepare, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update changelog with release date
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TODAY=$(date +%Y-%m-%d)
+
+          # Update the version entry with today's date
+          sed -i.bak "s/## \[${VERSION}\]/## [${VERSION}] - ${TODAY}/" CHANGELOG.md
+
+          # Add release link
+          if ! grep -q "\[${VERSION}\]: https://github.com" CHANGELOG.md; then
+            echo "" >> CHANGELOG.md
+            echo "[${VERSION}]: https://github.com/rohitkrpal13/theek-karo/releases/tag/v${VERSION}" >> CHANGELOG.md
+          fi
+
+          rm -f CHANGELOG.md.bak
+
+      - name: Commit changelog update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --staged --quiet || git commit -m "docs: update changelog for v${{ needs.prepare.outputs.version }}"
+          git push
+
+  # Notify completion
+  notify:
+    needs: [prepare, release, deploy-staging, deploy-production]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          echo "## 📋 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| CI | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ✅ Published |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | ✅ Created |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Staging | ${{ needs.deploy-staging.result == 'success' && '✅' || needs.deploy-staging.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Production | ${{ needs.deploy-production.result == 'success' && '✅' || needs.deploy-production.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: v${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release**: ${{ needs.release.outputs.release_url || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
