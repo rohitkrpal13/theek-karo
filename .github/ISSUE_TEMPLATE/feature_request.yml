@@ -1,0 +1,143 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please help us understand what you'd like to see.
+
+        **Before submitting:**
+        - 🔍 Search existing issues and feature requests
+        - 📋 Check the [roadmap](https://github.com/rohitkrpal13/theek-karo/blob/main/docs/ROADMAP.md) for planned features
+        - 💡 Consider if this fits the project's mission of civic transparency
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Feature Category
+      description: What area does this feature relate to?
+      options:
+        - Authentication / Users
+        - Reports / Cases
+        - Verification / Trust
+        - Media / Evidence
+        - Search / Discovery
+        - Analytics / Dashboards
+        - Maps / Geography
+        - Notifications
+        - AI / Classification
+        - Departments / SLA
+        - Moderation
+        - Community Features
+        - API / Developer Experience
+        - Frontend / UI
+        - Performance
+        - Security
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature?
+      options:
+        - Nice to have
+        - Important
+        - Critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? Is it related to a frustration?
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like.
+      placeholder: I would like to see...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+      placeholder: I've also considered...
+    validations:
+      required: false
+
+  - type: textarea
+    id: user-stories
+    attributes:
+      label: User Stories
+      description: How would different users interact with this feature?
+      placeholder: |
+        As a citizen, I want to...
+        As a volunteer, I want to...
+        As an admin, I want to...
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups / Wireframes
+      description: If applicable, add mockups or wireframes to illustrate the feature.
+      placeholder: Drag and drop mockups here...
+    validations:
+      required: false
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation Ideas
+      description: If you have ideas about how this could be implemented, share them here.
+      placeholder: This could be implemented by...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Willing to Contribute
+      description: Would you be willing to contribute this feature?
+      options:
+        - Yes, I'd like to implement this
+        - Yes, but I need guidance
+        - No, just suggesting
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, links, or references about the feature request.
+      placeholder: Any other information...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      description: Please confirm the following.
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: This feature aligns with the project's mission of civic transparency
+          required: false

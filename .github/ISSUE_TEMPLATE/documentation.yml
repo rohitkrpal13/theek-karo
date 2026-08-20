@@ -1,0 +1,99 @@
+name: 📚 Documentation
+description: Suggest improvements or report issues with documentation
+title: "[Docs]: "
+labels: ["documentation"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve our documentation! Whether it's a typo, unclear explanation, or missing information, we appreciate your feedback.
+
+        **Before submitting:**
+        - 🔍 Search existing issues to avoid duplicates
+        - 📋 Check if the documentation exists in the [docs/](https://github.com/rohitkrpal13/theek-karo/tree/main/docs) directory
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Documentation Type
+      description: What kind of documentation issue is this?
+      options:
+        - Typo / Grammar
+        - Unclear Explanation
+        - Missing Information
+        - Outdated Content
+        - Incorrect Information
+        - New Documentation Needed
+        - Code Example Issue
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: section
+    attributes:
+      label: Affected Section
+      description: Which documentation is affected?
+      options:
+        - README.md
+        - CONTRIBUTING.md
+        - docs/PRD.md (Product Requirements)
+        - docs/ARCHITECTURE.md
+        - docs/SECURITY.md
+        - docs/API.md
+        - docs/ROADMAP.md
+        - docs/DATABASE.md
+        - docs/I18N.md
+        - docs/AI-ARCHITECTURE.md
+        - docs/COMPLIANCE-DPDP.md
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Where is the issue? (file, section, line number)
+      placeholder: e.g., docs/API.md section "Authentication", around line 150
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue or improvement.
+      placeholder: What's wrong or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: How should it be improved? (if applicable)
+      placeholder: |
+        Current text: "..."
+        Suggested text: "..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, links, or references.
+      placeholder: Any other information...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      description: Please confirm the following.
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
