@@ -1,0 +1,160 @@
+name: PR Coverage
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  coverage-comparison:
+    name: Coverage Comparison
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Python dependencies
+        working-directory: services/api
+        run: |
+          pip install uv
+          uv sync --dev
+          uv add pytest-cov coverage[toml]
+
+      - name: Install Node.js dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Get base branch coverage (Python)
+        run: |
+          echo "📊 Getting base branch coverage..."
+          git checkout ${{ github.base_ref }}
+          cd services/api
+          uv run pytest --cov=tk_api --cov-report=xml:coverage-base.xml -q || true
+          cd ../..
+
+      - name: Get PR branch coverage (Python)
+        run: |
+          echo "📊 Getting PR branch coverage..."
+          git checkout ${{ github.head_ref }}
+          cd services/api
+          uv run pytest --cov=tk_api --cov-report=xml:coverage-pr.xml -q || true
+
+      - name: Compare coverage
+        run: |
+          echo "📊 Comparing coverage..."
+          
+          # Compare coverage reports
+          if [ -f services/api/coverage-base.xml ] && [ -f services/api/coverage-pr.xml ]; then
+            echo "## 📊 Coverage Comparison" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract coverage percentages
+            BASE_COVERAGE=$(grep -o 'line-rate="[0-9.]*"' services/api/coverage-base.xml | head -1 | grep -o '[0-9.]*')
+            PR_COVERAGE=$(grep -o 'line-rate="[0-9.]*"' services/api/coverage-pr.xml | head -1 | grep -o '[0-9.]*')
+            
+            echo "| Metric | Base | PR | Change |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|------|-----|--------|" >> $GITHUB_STEP_SUM_summary
+            
+            if [ -n "$BASE_COVERAGE" ] && [ -n "$PR_COVERAGE" ]; then
+              BASE_PCT=$(echo "$BASE_COVERAGE * 100" | bc | cut -d. -f1)
+              PR_PCT=$(echo "$PR_COVERAGE * 100" | bc | cut -d. -f1)
+              CHANGE=$((PR_PCT - BASE_PCT))
+              
+              if [ $CHANGE -gt 0 ]; then
+                STATUS="✅ +${CHANGE}%"
+              elif [ $CHANGE -lt 0 ]; then
+                STATUS="❌ ${CHANGE}%"
+              else
+                STATUS="➡️ No change"
+              fi
+              
+              echo "| Line Coverage | ${BASE_PCT}% | ${PR_PCT}% | ${STATUS} |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "⚠️ Could not compare coverage reports" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check coverage threshold
+        run: |
+          echo "🔍 Checking coverage threshold..."
+          
+          if [ -f services/api/coverage-pr.xml ]; then
+            COVERAGE=$(grep -o 'line-rate="[0-9.]*"' services/api/coverage-pr.xml | head -1 | grep -o '[0-9.]*')
+            
+            if [ -n "$COVERAGE" ]; then
+              COVERAGE_PCT=$(echo "$COVERAGE * 100" | bc | cut -d. -f1)
+              
+              echo "PR Coverage: ${COVERAGE_PCT}%"
+              
+              if [ $COVERAGE_PCT -lt 70 ]; then
+                echo "⚠️ Coverage below 70% threshold"
+                echo "## ⚠️ Coverage Warning" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "PR coverage is **${COVERAGE_PCT}%**, which is below the 70% threshold." >> $GITHUB_STEP_SUMMARY
+                echo "Please add tests to improve coverage." >> $GITHUB_STEP_SUMMARY
+              else
+                echo "✅ Coverage meets threshold"
+              fi
+            fi
+          fi
+
+      - name: Generate coverage summary
+        if: always()
+        run: |
+          echo "## 📋 Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUM summary
+          echo "### Files Changed" >> $GITHUB_STEP_SUMMARY
+          echo "Coverage analysis for files changed in this PR." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Action Items" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Review coverage report" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Add tests for uncovered code" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Ensure no coverage regression" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let coverageComment = `## 📊 Coverage Report\n\n`;
+            
+            // Check if coverage files exist
+            if (fs.existsSync('services/api/coverage-pr.xml')) {
+              coverageComment += `### Python Backend\n`;
+              coverageComment += `✅ Coverage analysis completed\n\n`;
+            } else {
+              coverageComment += `### Python Backend\n`;
+              coverageComment += `⚠️ Coverage analysis not available\n\n`;
+            }
+            
+            coverageComment += `### Recommendations\n`;
+            coverageComment += `- Add unit tests for new code\n`;
+            coverageComment += `- Ensure all branches are covered\n`;
+            coverageComment += `- Review coverage report for details\n\n`;
+            
+            coverageComment += `### Resources\n`;
+            coverageComment += `- [Coverage Guide](https://github.com/rohitkrpal13/theek-karo/blob/main/CONTRIBUTING.md#testing-requirements)\n`;
+            coverageComment += `- [Test Examples](https://github.com/rohitkrpal13/theek-karo/tree/main/services/api/tests)\n`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: coverageComment
+            });

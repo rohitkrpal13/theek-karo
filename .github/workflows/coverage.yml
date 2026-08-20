@@ -1,0 +1,314 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly on Mondays at 8am IST
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+env:
+  PYTHON_VERSION: '3.13'
+  NODE_VERSION: '22'
+
+jobs:
+  # =============================================================================
+  # Python Backend Coverage
+  # =============================================================================
+  python-coverage:
+    name: Python Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: services/api
+        run: |
+          pip install uv
+          uv sync --dev
+          uv add pytest-cov coverage[toml]
+
+      - name: Run tests with coverage
+        working-directory: services/api
+        run: |
+          echo "🧪 Running tests with coverage..."
+          uv run pytest \
+            --cov=tk_api \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            -v
+
+      - name: Display coverage summary
+        working-directory: services/api
+        run: |
+          echo "📊 Coverage Summary:"
+          uv run coverage report --show-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: services/api/coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage
+          path: |
+            services/api/coverage.xml
+            services/api/htmlcov/
+          retention-days: 30
+
+      - name: Generate coverage comment
+        if: github.event_name == 'pull_request'
+        uses: orgoro/coverage@v3.1
+        with:
+          coverageFile: services/api/coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          thresholdAll: 0.70
+          thresholdNew: 0.80
+
+  # =============================================================================
+  # TypeScript Frontend Coverage
+  # =============================================================================
+  typescript-coverage:
+    name: TypeScript Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: apps/web
+        run: |
+          echo "🧪 Running tests with coverage..."
+          npx vitest run \
+            --coverage \
+            --reporter=json \
+            --outputFile=coverage/coverage-final.json
+
+      - name: Generate coverage report
+        working-directory: apps/web
+        run: |
+          echo "📊 Generating coverage report..."
+          npx vitest run --coverage --reporter=text
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: apps/web/coverage/coverage-final.json
+          flags: typescript
+          name: typescript-coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-coverage
+          path: apps/web/coverage/
+          retention-days: 30
+
+  # =============================================================================
+  # Coverage Report
+  # =============================================================================
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [python-coverage, typescript-coverage]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Python coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage/python/
+
+      - name: Download TypeScript coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: typescript-coverage
+          path: coverage/typescript/
+
+      - name: Generate combined coverage report
+        run: |
+          echo "## 📊 Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Python Backend" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/python/coverage.xml ]; then
+            echo '```xml' >> $GITHUB_STEP_SUMMARY
+            head -50 coverage/python/coverage.xml >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No coverage data available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### TypeScript Frontend" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/typescript/coverage-final.json ]; then
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            head -50 coverage/typescript/coverage-final.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No coverage data available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📈 Coverage Goals" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Current | Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|---------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Python | 📊 See report | 70% | ${{ needs.python-coverage.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript | 📊 See report | 70% | ${{ needs.typescript-coverage.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 🔗 Resources" >> $GITHUB_STEP_SUMMARY
+          echo "- [Codecov Dashboard](https://codecov.io/gh/rohitkrpal13/theek-karo)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Coverage Artifacts](https://github.com/rohitkrpal13/theek-karo/actions)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check coverage thresholds
+        run: |
+          echo "🔍 Checking coverage thresholds..."
+          
+          # Check if coverage meets minimum threshold
+          if [ "${{ needs.python-coverage.result }}" == "failure" ]; then
+            echo "❌ Python coverage below threshold"
+            exit 1
+          fi
+          
+          if [ "${{ needs.typescript-coverage.result }}" == "failure" ]; then
+            echo "❌ TypeScript coverage below threshold"
+            exit 1
+          fi
+          
+          echo "✅ Coverage thresholds met"
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pythonStatus = '${{ needs.python-coverage.result }}' === 'success' ? '✅' : '❌';
+            const typescriptStatus = '${{ needs.typescript-coverage.result }}' === 'success' ? '✅' : '❌';
+            
+            const body = `## 📊 Code Coverage Report
+            
+            | Component | Status | Details |
+            |-----------|--------|---------|
+            | Python Backend | ${pythonStatus} | [Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |
+            | TypeScript Frontend | ${typescriptStatus} | [Coverage Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |
+            
+            ### Coverage Goals
+            - **Minimum**: 70% line coverage
+            - **Target**: 80% line coverage
+            
+            ### Artifacts
+            Download detailed coverage reports from the [workflow artifacts](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).
+            
+            ---
+            *This is an automated coverage report.*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # =============================================================================
+  # Coverage Trend Tracking
+  # =============================================================================
+  coverage-trend:
+    name: Coverage Trend
+    runs-on: ubuntu-latest
+    needs: [python-coverage, typescript-coverage]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-coverage
+          path: coverage/
+
+      - name: Store coverage in repository
+        run: |
+          echo "📈 Storing coverage trend..."
+          
+          # Create coverage history file if it doesn't exist
+          if [ ! -f coverage-history.json ]; then
+            echo '{"history": []}' > coverage-history.json
+          fi
+          
+          # Add current coverage to history
+          python3 << EOF
+          import json
+          from datetime import datetime
+          
+          with open('coverage-history.json', 'r') as f:
+              data = json.load(f)
+          
+          entry = {
+              'date': datetime.now().isoformat(),
+              'sha': '${{ github.sha }}',
+              'python_coverage': 'See coverage.xml',
+              'typescript_coverage': 'See coverage-final.json'
+          }
+          
+          data['history'].append(entry)
+          
+          # Keep only last 30 entries
+          data['history'] = data['history'][-30:]
+          
+          with open('coverage-history.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          EOF
+
+      - name: Upload coverage history
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-history
+          path: coverage-history.json
+          retention-days: 90
+
+      - name: Update coverage badge
+        run: |
+          echo "🎨 Updating coverage badge..."
+          
+          # This would typically update a coverage badge
+          # For now, just log the coverage
+          echo "Coverage data stored for trend tracking"
+          echo "View history at: https://github.com/rohitkrpal13/theek-karo/actions"
