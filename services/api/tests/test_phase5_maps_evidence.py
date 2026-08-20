@@ -5,15 +5,11 @@ Tests: heatmap data points, timeline data, video scan gate, evidence pairs.
 
 from __future__ import annotations
 
-import pytest
-
 from tk_api.media.scan import (
     ALLOWED_MIME,
     VIDEO_MIMES,
-    ScanResult,
     scan_bytes,
 )
-
 
 # ---------------------------------------------------------------------------
 # 1. Heatmap & Timeline schemas
@@ -129,8 +125,9 @@ def test_evidence_chain_model():
 def test_scan_jpeg_still_works():
     """JPEG magic bytes still pass after video additions."""
     # Use real minimal JPEG for decodability check
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     buf = io.BytesIO()
     Image.new("RGB", (10, 10), "red").save(buf, format="JPEG")
@@ -141,8 +138,9 @@ def test_scan_jpeg_still_works():
 
 def test_scan_png_still_works():
     """PNG magic bytes still pass."""
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     buf = io.BytesIO()
     Image.new("RGB", (10, 10), "blue").save(buf, format="PNG")

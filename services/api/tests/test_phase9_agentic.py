@@ -5,9 +5,6 @@ Tests: triage agent, recidivism detection, content moderation.
 
 from __future__ import annotations
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # 1. Triage Agent
 # ---------------------------------------------------------------------------
@@ -15,7 +12,7 @@ import pytest
 
 def test_triage_import():
     """Triage module imports cleanly."""
-    from tk_api.ai.triage import triage_report, batch_triage, TRIAGE_SLA_SECONDS
+    from tk_api.ai.triage import TRIAGE_SLA_SECONDS
 
     assert TRIAGE_SLA_SECONDS == 300
 
@@ -23,10 +20,10 @@ def test_triage_import():
 def test_triage_report_constants():
     """Triage constants are reasonable."""
     from tk_api.ai.triage import (
-        TRIAGE_STATUS_PENDING,
+        TRIAGE_SLA_SECONDS,
         TRIAGE_STATUS_COMPLETED,
         TRIAGE_STATUS_ESCALATED,
-        TRIAGE_SLA_SECONDS,
+        TRIAGE_STATUS_PENDING,
     )
 
     assert TRIAGE_STATUS_PENDING == "pending"
@@ -43,10 +40,8 @@ def test_triage_report_constants():
 def test_recidivism_import():
     """Recidivism module imports cleanly."""
     from tk_api.ai.recidivism import (
-        detect_recidivism,
-        get_recidivism_summary,
-        RECIDIVISM_WINDOW_DAYS,
         RECIDIVISM_MIN_REPEATS,
+        RECIDIVISM_WINDOW_DAYS,
     )
 
     assert RECIDIVISM_WINDOW_DAYS == 180
@@ -68,8 +63,6 @@ def test_recidivism_constants():
 def test_moderation_import():
     """Moderation module imports cleanly."""
     from tk_api.ai.moderation import (
-        moderate_content,
-        moderate_report_comments,
         MOD_CATEGORIES,
     )
 
@@ -83,8 +76,18 @@ def test_moderation_categories_comprehensive():
     """All expected moderation categories exist."""
     from tk_api.ai.moderation import MOD_CATEGORIES
 
-    expected = {"spam", "harassment", "misinformation", "hate_speech",
-                "personal_info", "off_topic", "low_quality", "political", "safe", "duplicate"}
+    expected = {
+        "spam",
+        "harassment",
+        "misinformation",
+        "hate_speech",
+        "personal_info",
+        "off_topic",
+        "low_quality",
+        "political",
+        "safe",
+        "duplicate",
+    }
     assert expected == set(MOD_CATEGORIES.keys())
 
 
@@ -131,17 +134,25 @@ def test_agent_registry_has_all_agents():
     codes = {a["code"] for a in agents}
 
     expected = {
-        "civic_assistant", "case_analysis", "routing", "translation",
-        "analytics", "evidence", "data_quality", "geospatial",
-        "policy_research", "safety",
+        "civic_assistant",
+        "case_analysis",
+        "routing",
+        "translation",
+        "analytics",
+        "evidence",
+        "data_quality",
+        "geospatial",
+        "policy_research",
+        "safety",
     }
     assert expected.issubset(codes)
 
 
 def test_agent_safety_check():
     """Safety agent catches prohibited patterns."""
-    from tk_api.ai_platform.agents import SafetyAgent
     import asyncio
+
+    from tk_api.ai_platform.agents import SafetyAgent
 
     agent = SafetyAgent()
 
@@ -162,8 +173,9 @@ def test_agent_safety_check():
 
 def test_agent_safety_passes_clean_content():
     """Safety agent passes clean content."""
-    from tk_api.ai_platform.agents import SafetyAgent
     import asyncio
+
+    from tk_api.ai_platform.agents import SafetyAgent
 
     agent = SafetyAgent()
 

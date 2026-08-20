@@ -186,7 +186,7 @@ export default async function PrivacyPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-bold">7. Children's Privacy</h2>
+        <h2 className="text-lg font-bold">7. Children&apos;s Privacy</h2>
         <p className="text-sm">
           Theek Karo is not directed at children under 18. We do not knowingly
           collect personal data from minors. If you believe a minor has submitted
