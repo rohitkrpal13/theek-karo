@@ -29,10 +29,16 @@ interface UploadedFile {
   name: string
   size: number
   mimeType: string
-  previewUrl: string
+  file: File
+  uploaded: boolean
+  mediaId?: string
+  uploadUrl?: string | null
 }
 
 const STORAGE_DRAFT_KEY = "tk_report_draft_v1"
+const MAX_EVIDENCE_FILES = 5
+const MAX_EVIDENCE_FILE_BYTES = 8 * 1024 * 1024
+const ALLOWED_EVIDENCE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId }: Props) {
   const t = useT()
@@ -55,11 +61,23 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
   const [issueTypes, setIssueTypes] = useState<IssueType[]>([])
   const [selectedIssueType, setSelectedIssueType] = useState<IssueType | null>(null)
 
-  const [position, setPosition] = useState<[number, number]>([
-    initialLon ?? 75.7873,
-    initialLat ?? 26.9124,
-  ])
-  const [accuracy, setAccuracy] = useState(15)
+  const initialLocationIsValid =
+    initialLat !== undefined &&
+    initialLon !== undefined &&
+    Number.isFinite(initialLat) &&
+    Number.isFinite(initialLon) &&
+    initialLat >= -90 &&
+    initialLat <= 90 &&
+    initialLon >= -180 &&
+    initialLon <= 180
+  const [position, setPosition] = useState<[number, number] | null>(
+    initialLocationIsValid ? [initialLon, initialLat] : null,
+  )
+  const [latitude, setLatitude] = useState(initialLocationIsValid ? String(initialLat) : "")
+  const [longitude, setLongitude] = useState(initialLocationIsValid ? String(initialLon) : "")
+  const [accuracy, setAccuracy] = useState<number | null>(null)
+  const [locating, setLocating] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const [coordSource, setCoordSource] = useState<CoordinateSource>("USER_SELECTED")
   const [addressHint, setAddressHint] = useState("")
 
@@ -97,7 +115,34 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<{ id: string; ticket_no: string } | null>(null)
+  const [submittedReport, setSubmittedReport] = useState<{ id: string; ticket_no: string } | null>(null)
   const idempotencyKey = useRef<string>(crypto.randomUUID())
+
+  function parseCoordinates(latText: string, lonText: string): [number, number] | null {
+    if (!latText.trim() || !lonText.trim()) return null
+    const lat = Number(latText)
+    const lon = Number(lonText)
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      lat < -90 ||
+      lat > 90 ||
+      lon < -180 ||
+      lon > 180
+    ) {
+      return null
+    }
+    return [lon, lat]
+  }
+
+  function updateCoordinates(latText: string, lonText: string) {
+    setLatitude(latText)
+    setLongitude(lonText)
+    setPosition(parseCoordinates(latText, lonText))
+    setCoordSource("USER_SELECTED")
+    setAccuracy(null)
+    setLocationError(null)
+  }
 
   // Load Categories on mount
   useEffect(() => {
@@ -108,6 +153,17 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
         if (initialCategory) {
           const match = res.items.find((c) => c.slug === initialCategory)
           if (match) setSelectedCategory(match)
+        } else {
+          try {
+            const raw = localStorage.getItem(STORAGE_DRAFT_KEY)
+            if (raw) {
+              const saved = JSON.parse(raw) as { category_slug?: string }
+              const restoredCategory = res.items.find((category) => category.slug === saved.category_slug)
+              if (restoredCategory) setSelectedCategory(restoredCategory)
+            }
+          } catch (err) {
+            console.warn("Failed to restore draft category", err)
+          }
         }
       } catch (err) {
         console.error("Failed to load categories in wizard", err)
@@ -152,23 +208,35 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
   useEffect(() => {
     if (typeof window === "undefined" || hasRestoredDraft || activeDraftId || initialCategory) return
     const restoreTimer = setTimeout(() => {
-      const raw = localStorage.getItem(STORAGE_DRAFT_KEY)
-      if (raw) {
-        try {
+      try {
+        const raw = localStorage.getItem(STORAGE_DRAFT_KEY)
+        if (raw) {
           const saved = JSON.parse(raw)
           if (saved.title || saved.description || saved.category_slug) {
             setTitle(saved.title || "")
             setDescription(saved.description || "")
             setSeverity(saved.severity || "medium")
-            setAddressHint(saved.address_hint || "")
-            if (saved.position) setPosition(saved.position)
+            setAddressHint(saved.address_hint || saved.addressHint || "")
+            if (Array.isArray(saved.position) && saved.position.length === 2) {
+              const [lon, lat] = saved.position as [number, number]
+              const restored = parseCoordinates(String(lat), String(lon))
+              if (restored) {
+                setPosition(restored)
+                setLongitude(String(lon))
+                setLatitude(String(lat))
+              }
+            }
             if (saved.coordSource) setCoordSource(saved.coordSource)
             if (saved.fields) setFields(saved.fields)
+            if (saved.submitted_report?.id && saved.submitted_report?.ticket_no) {
+              setSubmittedReport(saved.submitted_report)
+              setStep(5)
+            }
             setAutoSavedTime("Restored from backup")
           }
-        } catch (e) {
-          console.warn("Failed to parse local draft", e)
         }
+      } catch (err) {
+        console.warn("Failed to restore local draft", err)
       }
       setHasRestoredDraft(true)
     }, 0)
@@ -179,26 +247,36 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
   useEffect(() => {
     if (typeof window === "undefined") return
     if (done) {
-      localStorage.removeItem(STORAGE_DRAFT_KEY)
+      try {
+        localStorage.removeItem(STORAGE_DRAFT_KEY)
+      } catch (err) {
+        console.warn("Failed to clear submitted local draft", err)
+      }
       return
     }
     const timer = setTimeout(() => {
-      const payload = {
-        category_slug: selectedCategory?.slug,
-        title,
-        description,
-        severity,
-        position,
-        coordSource,
-        addressHint,
-        fields,
-        updatedAt: new Date().toISOString(),
+      try {
+        const payload = {
+          category_slug: selectedCategory?.slug,
+          title,
+          description,
+          severity,
+          position,
+          coordSource,
+          address_hint: addressHint,
+          fields,
+          submitted_report: submittedReport,
+          updatedAt: new Date().toISOString(),
+        }
+        localStorage.setItem(STORAGE_DRAFT_KEY, JSON.stringify(payload))
+        setAutoSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+      } catch (err) {
+        console.error("Failed to save local report draft", err)
+        setAutoSavedTime(null)
       }
-      localStorage.setItem(STORAGE_DRAFT_KEY, JSON.stringify(payload))
-      setAutoSavedTime(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
     }, 2000)
     return () => clearTimeout(timer)
-  }, [selectedCategory, title, description, severity, position, coordSource, addressHint, fields, done])
+  }, [selectedCategory, title, description, severity, position, coordSource, addressHint, fields, done, submittedReport])
 
   const stepsList = [
     { label: t("submit.step.category") },
@@ -232,7 +310,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
 
   function canNext(): boolean {
     if (step === 0) return selectedCategory !== null
-    if (step === 1) return position[0] !== 0 && position[1] !== 0
+    if (step === 1) return position !== null
     if (step === 2) return true // Institution is optional
     if (step === 3) {
       const filled = (name: string) => {
@@ -257,7 +335,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
     try {
       const res = await reportsApi.aiSuggestIntake({
         description,
-        location: { type: "Point", coordinates: position },
+        ...(position ? { location: { type: "Point", coordinates: position } } : {}),
         category_hint: selectedCategory?.slug,
       })
       setAiSuggestion({
@@ -294,19 +372,78 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
     const selected = e.target.files
     if (!selected) return
 
-    const newFiles: UploadedFile[] = Array.from(selected).map((f) => ({
-      id: crypto.randomUUID(),
-      name: f.name,
-      size: f.size,
-      mimeType: f.type || "image/jpeg",
-      previewUrl: URL.createObjectURL(f),
-    }))
+    setError(null)
+    const availableSlots = MAX_EVIDENCE_FILES - files.length
+    const accepted: UploadedFile[] = []
+    const rejected: string[] = []
 
-    setFiles((prev) => [...prev, ...newFiles])
+    for (const file of Array.from(selected)) {
+      if (!ALLOWED_EVIDENCE_TYPES.has(file.type)) {
+        rejected.push(`${file.name}: ${t("submit.evidence.invalid_type")}`)
+      } else if (file.size <= 0 || file.size > MAX_EVIDENCE_FILE_BYTES) {
+        rejected.push(`${file.name}: ${t("submit.evidence.size_limit")}`)
+      } else if (accepted.length >= availableSlots) {
+        rejected.push(`${file.name}: ${t("submit.evidence.max_files")}`)
+      } else {
+        accepted.push({
+          id: crypto.randomUUID(),
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          file,
+          uploaded: false,
+        })
+      }
+    }
+
+    if (accepted.length) setFiles((prev) => [...prev, ...accepted])
+    if (rejected.length) setError(rejected.join(" "))
+    e.target.value = ""
   }
 
   function removeFile(id: string) {
     setFiles((prev) => prev.filter((f) => f.id !== id))
+  }
+
+  async function detectDeviceLocation() {
+    setLocationError(null)
+    if (!navigator.geolocation) {
+      setLocationError(t("submit.location.unavailable"))
+      return
+    }
+
+    setLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (result) => {
+        const lat = String(result.coords.latitude)
+        const lon = String(result.coords.longitude)
+        const coordinates = parseCoordinates(lat, lon)
+        if (!coordinates) {
+          setLocationError(t("submit.location.invalid"))
+          setLocating(false)
+          return
+        }
+        setLatitude(lat)
+        setLongitude(lon)
+        setPosition(coordinates)
+        setAccuracy(Math.round(result.coords.accuracy))
+        setCoordSource("DEVICE_LOCATION")
+        setLocating(false)
+      },
+      (geoError) => {
+        const message =
+          geoError.code === geoError.PERMISSION_DENIED
+            ? t("submit.location.permission_denied")
+            : geoError.code === geoError.POSITION_UNAVAILABLE
+              ? t("submit.location.unavailable")
+              : geoError.code === geoError.TIMEOUT
+                ? t("submit.location.timeout")
+                : t("submit.location.failed")
+        setLocationError(message)
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    )
   }
 
   // Calculate Observation Timestamp
@@ -338,8 +475,8 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
           title: title || "Draft Observation",
           description,
           severity,
-          location: { type: "Point", coordinates: position },
-          location_accuracy_m: accuracy,
+          ...(position ? { location: { type: "Point" as const, coordinates: position } } : {}),
+          location_accuracy_m: accuracy ?? undefined,
           coordinate_source: coordSource,
           observed_at: getObservedAt(),
           address_hint: addressHint,
@@ -354,8 +491,8 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
           title: title || "Draft Observation",
           description,
           severity,
-          location: { type: "Point", coordinates: position },
-          location_accuracy_m: accuracy,
+          ...(position ? { location: { type: "Point" as const, coordinates: position } } : {}),
+          location_accuracy_m: accuracy ?? undefined,
           coordinate_source: coordSource,
           observed_at: getObservedAt(),
           address_hint: addressHint,
@@ -372,30 +509,22 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
 
   // Final Submit
   async function handleSubmit() {
-    if (!selectedCategory) return
+    if (!selectedCategory || !position) {
+      setError(t("submit.location.required"))
+      return
+    }
+    if (files.length > 0 && !user) {
+      setError(t("submit.evidence.sign_in_required"))
+      return
+    }
     setSending(true)
     setError(null)
 
+    let reportToFinish = submittedReport
     try {
-      let result
-      if (activeDraftId) {
-        result = await reportsApi.submitDraft(activeDraftId, {
-          category_slug: selectedCategory.slug,
-          institution_id: selectedInstitution?.id || null,
-          issue_type_id: selectedIssueType?.id || null,
-          title,
-          description,
-          severity,
-          location: { type: "Point", coordinates: position },
-          location_accuracy_m: accuracy,
-          coordinate_source: coordSource,
-          observed_at: getObservedAt(),
-          address_hint: addressHint,
-          fields: schemaFields(),
-        })
-      } else {
-        result = await reportsApi.submit(
-          {
+      if (!reportToFinish) {
+        const result = activeDraftId
+          ? await reportsApi.submitDraft(activeDraftId, {
             category_slug: selectedCategory.slug,
             institution_id: selectedInstitution?.id || null,
             issue_type_id: selectedIssueType?.id || null,
@@ -403,22 +532,100 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
             description,
             severity,
             location: { type: "Point", coordinates: position },
-            location_accuracy_m: accuracy,
+            location_accuracy_m: accuracy ?? undefined,
             coordinate_source: coordSource,
             observed_at: getObservedAt(),
             address_hint: addressHint,
             fields: schemaFields(),
-          },
-          idempotencyKey.current,
-        )
+          })
+          : await reportsApi.submit(
+              {
+                category_slug: selectedCategory.slug,
+                institution_id: selectedInstitution?.id || null,
+                issue_type_id: selectedIssueType?.id || null,
+                title,
+                description,
+                severity,
+                location: { type: "Point", coordinates: position },
+                location_accuracy_m: accuracy ?? undefined,
+                coordinate_source: coordSource,
+                observed_at: getObservedAt(),
+                address_hint: addressHint,
+                fields: schemaFields(),
+              },
+              idempotencyKey.current,
+            )
+        reportToFinish = { id: result.id, ticket_no: result.ticket_no }
+        setSubmittedReport(reportToFinish)
+        try {
+          localStorage.setItem(
+            STORAGE_DRAFT_KEY,
+            JSON.stringify({
+              category_slug: selectedCategory.slug,
+              title,
+              description,
+              severity,
+              position,
+              coordSource,
+              address_hint: addressHint,
+              fields,
+              submitted_report: reportToFinish,
+              updatedAt: new Date().toISOString(),
+            }),
+          )
+        } catch (storageError) {
+          console.warn("Failed to persist report upload progress", storageError)
+        }
+      }
+
+      for (const file of files) {
+        if (file.uploaded) continue
+        let mediaId = file.mediaId
+        let presignedUrl = file.uploadUrl ?? null
+        if (!mediaId) {
+          const slot = await reportsApi.requestUploadSlot(reportToFinish.id, {
+            mime_type: file.mimeType,
+            size_bytes: file.size,
+            kind: "image",
+          })
+          if (slot.upload_method === "presigned" && !slot.presigned_url) {
+            throw new Error(t("submit.evidence.upload_failed"))
+          }
+          mediaId = slot.media_id
+          presignedUrl = slot.presigned_url
+          setFiles((prev) => prev.map((item) =>
+            item.id === file.id ? { ...item, mediaId, uploadUrl: presignedUrl } : item,
+          ))
+        }
+        await reportsApi.uploadEvidenceBytes(mediaId, file.file, presignedUrl)
+        const checksum = await crypto.subtle.digest("SHA-256", await file.file.arrayBuffer())
+        const checksumSha256 = Array.from(new Uint8Array(checksum))
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("")
+        await reportsApi.completeUpload(reportToFinish.id, {
+          media_id: mediaId,
+          checksum_sha256: checksumSha256,
+        })
+        setFiles((prev) => prev.map((item) =>
+          item.id === file.id ? { ...item, uploaded: true } : item,
+        ))
       }
 
       if (typeof window !== "undefined") {
-        localStorage.removeItem(STORAGE_DRAFT_KEY)
+        try {
+          localStorage.removeItem(STORAGE_DRAFT_KEY)
+        } catch (storageError) {
+          console.warn("Failed to clear submitted local draft", storageError)
+        }
       }
-      setDone({ id: result.id, ticket_no: result.ticket_no })
+      setDone(reportToFinish)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit report")
+      const detail = err instanceof Error ? err.message : "Failed to submit report"
+      setError(
+        reportToFinish
+          ? t("submit.evidence.upload_retry").replace("{ticket}", reportToFinish.ticket_no) + ` ${detail}`
+          : detail,
+      )
     } finally {
       setSending(false)
     }
@@ -472,6 +679,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
               setDescription("")
               setFiles([])
               setActiveDraftId(null)
+              setSubmittedReport(null)
               idempotencyKey.current = crypto.randomUUID()
             }}
           >
@@ -587,11 +795,12 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
                 id="input-lat"
                 type="number"
                 step="any"
-                value={position[1]}
-                onChange={(e) => {
-                  setPosition([position[0], parseFloat(e.target.value) || 0])
-                  setCoordSource("USER_SELECTED")
-                }}
+                min="-90"
+                max="90"
+                value={latitude}
+                aria-invalid={Boolean(locationError) || (!position && Boolean(latitude || longitude))}
+                aria-describedby="location-help location-error"
+                onChange={(e) => updateCoordinates(e.target.value, longitude)}
                 className="mt-1 w-full rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-2.5 text-xs text-(--color-ink)"
               />
             </div>
@@ -603,15 +812,34 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
                 id="input-lon"
                 type="number"
                 step="any"
-                value={position[0]}
-                onChange={(e) => {
-                  setPosition([parseFloat(e.target.value) || 0, position[1]])
-                  setCoordSource("USER_SELECTED")
-                }}
+                min="-180"
+                max="180"
+                value={longitude}
+                aria-invalid={Boolean(locationError) || (!position && Boolean(latitude || longitude))}
+                aria-describedby="location-help location-error"
+                onChange={(e) => updateCoordinates(latitude, e.target.value)}
                 className="mt-1 w-full rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-2.5 text-xs text-(--color-ink)"
               />
             </div>
           </div>
+          <p id="location-help" className="text-xs text-(--color-ink-muted)">
+            {t("submit.location.help")}
+          </p>
+          {locationError && (
+            <p id="location-error" role="alert" className="text-xs text-(--color-error)">
+              {locationError}
+            </p>
+          )}
+          {!locationError && (latitude || longitude) && !position && (
+            <p id="location-error" role="alert" className="text-xs text-(--color-error)">
+              {t("submit.location.invalid")}
+            </p>
+          )}
+          {!position && !latitude && !longitude && (
+            <p id="location-error" className="text-xs text-(--color-ink-muted)">
+              {t("submit.location.required")}
+            </p>
+          )}
 
           <div>
             <label htmlFor="address-hint" className="text-xs font-semibold text-(--color-ink-muted)">
@@ -632,24 +860,19 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
               variant="outline"
               size="sm"
               icon="map"
-              onClick={() => {
-                if (navigator.geolocation) {
-                  navigator.geolocation.getCurrentPosition(
-                    (pos) => {
-                      setPosition([pos.coords.longitude, pos.coords.latitude])
-                      setAccuracy(Math.round(pos.coords.accuracy))
-                      setCoordSource("DEVICE_LOCATION")
-                    },
-                    (err) => console.warn("GPS detection warning:", err),
-                    { enableHighAccuracy: true, timeout: 10000 }
-                  )
-                }
-              }}
+              disabled={locating}
+              onClick={() => void detectDeviceLocation()}
             >
-              Detect Device GPS ({accuracy}m accuracy)
+              {locating
+                ? t("submit.location.detecting")
+                : accuracy === null
+                  ? t("submit.location.detect")
+                  : `${t("submit.location.detect")} (${accuracy}m)`}
             </Button>
             <span className="text-xs text-(--color-ink-muted)">
-              Source: <span className="font-mono font-semibold text-(--color-ink)">{coordSource}</span>
+              {position
+                ? `${t("submit.location.source")}: ${coordSource}${accuracy === null ? "" : ` · ${accuracy}m`}`
+                : t("submit.location.not_set")}
             </span>
           </div>
         </div>
@@ -697,7 +920,8 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
                   const match = institutions.find((i) => i.id === val)
                   setSelectedInstitution(match ?? null)
                   if (match && match.location_geojson) {
-                    setPosition(match.location_geojson.coordinates)
+                    const [lon, lat] = match.location_geojson.coordinates
+                    updateCoordinates(String(lat), String(lon))
                     setCoordSource("INSTITUTION_LOCATION")
                   }
                 }}
@@ -908,7 +1132,10 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
                       onChange={(e) =>
                         setFields((prev) => ({
                           ...prev,
-                          [key]: propObj.type === "integer" ? parseInt(e.target.value, 10) || 0 : e.target.value,
+                          [key]:
+                            propObj.type === "integer" && e.target.value !== ""
+                              ? parseInt(e.target.value, 10)
+                              : e.target.value,
                         }))
                       }
                       className="mt-1 w-full rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-2 text-xs text-(--color-ink)"
@@ -928,30 +1155,34 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
             {t("submit.step.evidence")}
           </h2>
           <p className="text-xs text-(--color-ink-muted)">
-            Attach photos, short videos, or documents corroborating this report. Images undergo automatic privacy verification before publishing.
+            {t("submit.evidence.description")}
           </p>
 
           <input
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/jpeg,image/png,image/webp,video/mp4,application/pdf"
+            accept="image/jpeg,image/png,image/webp"
             className="hidden"
             onChange={handleFileUpload}
+            disabled={!user || files.length >= MAX_EVIDENCE_FILES}
           />
           <input
             ref={cameraInputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             capture="environment"
             className="hidden"
             onChange={handleFileUpload}
+            disabled={!user || files.length >= MAX_EVIDENCE_FILES}
           />
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div
+            <button
+              type="button"
+              disabled={!user || files.length >= MAX_EVIDENCE_FILES}
               onClick={() => fileInputRef.current?.click()}
-              className="flex cursor-pointer flex-col items-center justify-center rounded-(--radius-lg) border-2 border-dashed border-(--color-line) p-6 text-center hover:border-(--color-primary) hover:bg-(--color-surface-sunken)"
+              className="flex flex-col items-center justify-center rounded-(--radius-lg) border-2 border-dashed border-(--color-line) p-6 text-center hover:border-(--color-primary) hover:bg-(--color-surface-sunken) disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Icon name="activity" size={28} />
               <p className="mt-2 text-sm font-semibold text-(--color-ink)">
@@ -960,11 +1191,13 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
               <p className="mt-1 text-xs text-(--color-ink-muted)">
                 {t("submit.upload_limits")}
               </p>
-            </div>
+            </button>
 
-            <div
+            <button
+              type="button"
+              disabled={!user || files.length >= MAX_EVIDENCE_FILES}
               onClick={() => cameraInputRef.current?.click()}
-              className="flex cursor-pointer flex-col items-center justify-center rounded-(--radius-lg) border-2 border-dashed border-(--color-line) p-6 text-center hover:border-(--color-primary) hover:bg-(--color-surface-sunken)"
+              className="flex flex-col items-center justify-center rounded-(--radius-lg) border-2 border-dashed border-(--color-line) p-6 text-center hover:border-(--color-primary) hover:bg-(--color-surface-sunken) disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Icon name="check" size={28} />
               <p className="mt-2 text-sm font-semibold text-(--color-ink)">
@@ -973,8 +1206,25 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
               <p className="mt-1 text-xs text-(--color-ink-muted)">
                 {t("submit.capture_hint")}
               </p>
-            </div>
+            </button>
           </div>
+
+          {!user && (
+            <p className="rounded-(--radius-md) border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              {t("submit.evidence.sign_in_required")}{" "}
+              <Link
+                href={`/${locale}/auth/login`}
+                className="font-semibold underline underline-offset-2"
+              >
+                {t("nav.login")}
+              </Link>
+            </p>
+          )}
+          {user && (
+            <p className="text-xs text-(--color-ink-muted)">
+              {t("submit.evidence.file_count").replace("{count}", String(files.length))}
+            </p>
+          )}
 
           {files.length > 0 && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -987,7 +1237,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
                     {file.name}
                   </p>
                   <p className="text-xs text-(--color-ink-muted)">
-                    {(file.size / 1024).toFixed(0)} KB · {t("submit.file_ready")}
+                    {(file.size / 1024).toFixed(0)} KB · {file.uploaded ? t("submit.file_uploaded") : t("submit.file_ready")}
                   </p>
                   <button
                     type="button"
@@ -1030,7 +1280,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
             <div>
               <dt className="text-(--color-ink-muted)">Coordinates ({coordSource})</dt>
               <dd className="font-mono text-(--color-ink)">
-                {position[1].toFixed(4)}, {position[0].toFixed(4)}
+                  {position ? `${position[1].toFixed(4)}, ${position[0].toFixed(4)}` : t("submit.location.not_set")}
               </dd>
             </div>
             <div className="col-span-2">
@@ -1076,7 +1326,7 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
           >
             {t("submit.back")}
           </Button>
-          {user && !done && (
+          {user && !done && !submittedReport && (
             <Button
               variant="outline"
               size="md"
@@ -1105,7 +1355,11 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
             disabled={sending}
             onClick={() => void handleSubmit()}
           >
-            {sending ? t("submit.sending") : t("submit.done")}
+            {sending
+              ? t("submit.sending")
+              : submittedReport
+                ? t("submit.retry_evidence")
+                : t("submit.done")}
           </Button>
         )}
       </div>

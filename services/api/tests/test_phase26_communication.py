@@ -87,7 +87,30 @@ def test_alert_create_and_review(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.json()["status"] == "published"
 
-    # List published
+    # Public feed exposes only verified, published alerts without authentication.
+    draft = client.post(
+        "/api/v1/communication/alerts",
+        json={
+            "title": "Draft alert",
+            "body": "Not yet verified.",
+            "category": "infrastructure",
+            "severity": "warning",
+            "source": "Unverified",
+        },
+        headers=headers,
+    )
+    assert draft.status_code == 201, draft.text
+    public = client.get("/api/v1/communication/public-alerts")
+    assert public.status_code == 200, public.text
+    public_items = public.json()["items"]
+    assert [item["id"] for item in public_items] == [alert_id]
+    assert public_items[0]["summary"] == "Due to construction, NH-44 is closed between km 200-210."
+    assert public_items[0]["verified"] is True
+    assert "body" not in public_items[0]
+    assert "source" not in public_items[0]
+
+    # The full staff list remains protected.
+    assert client.get("/api/v1/communication/alerts").status_code == 401
     resp = client.get("/api/v1/communication/alerts", headers=headers)
     assert resp.status_code == 200
     assert len(resp.json()["items"]) >= 1

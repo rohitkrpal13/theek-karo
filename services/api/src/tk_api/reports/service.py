@@ -400,6 +400,21 @@ async def submit_draft(
         request=request,
     )
     await session.commit()
+    if request is not None:
+        from tk_api.core.events import broadcast_live_event
+
+        await broadcast_live_event(
+            request,
+            "report.created",
+            {
+                "id": str(report.id),
+                "ticket_no": report.ticket_no,
+                "title": report.title,
+                "status": report.status,
+                "severity": report.severity,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+            },
+        )
     return _report_out(report)
 
 
@@ -544,6 +559,22 @@ async def submit_report(
         },
     )
     await session.commit()
+    if request is not None:
+        from tk_api.core.events import broadcast_live_event
+
+        await broadcast_live_event(
+            request,
+            "report.created",
+            {
+                "id": str(report.id),
+                "ticket_no": report.ticket_no,
+                "title": report.title,
+                "category_slug": category_slug,
+                "status": report.status,
+                "severity": report.severity,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+            },
+        )
     return _report_out(report, evidence_items)
 
 
@@ -1131,6 +1162,21 @@ async def transition(
         request=request,
     )
     await session.commit()
+    if request is not None:
+        from tk_api.core.events import broadcast_live_event
+
+        await broadcast_live_event(
+            request,
+            "report.updated",
+            {
+                "id": str(report.id),
+                "ticket_no": report.ticket_no,
+                "title": report.title,
+                "status": report.status,
+                "severity": report.severity,
+                "updated_at": report.updated_at.isoformat() if report.updated_at else None,
+            },
+        )
     return _report_out(report)
 
 

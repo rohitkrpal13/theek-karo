@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Env = Literal["dev", "test", "staging", "prod"]
@@ -170,7 +171,7 @@ class Settings(BaseSettings):
 
     # API configuration
     api_v1_prefix: str = "/api/v1"
-    max_request_body_bytes: int = 10 * 1024 * 1024  # 10 MB
+    max_request_body_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # 10 MB
 
     @property
     def is_test(self) -> bool:

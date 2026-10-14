@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from tk_api.api.deps import CurrentUser, DbSession
 from tk_api.auth.authorization import require_permission
@@ -16,6 +16,8 @@ from tk_api.communication.models import (
     UserDevice,
 )
 from tk_api.communication.providers import build_providers
+from tk_api.core.events import broadcast_live_event
+from tk_api.core.rate_limit import client_ip, rate_limit
 
 communication_router = APIRouter(prefix="/api/v1/communication", tags=["communication"])
 
@@ -37,6 +39,46 @@ def _parse_id(raw: str, *, kind: str) -> uuid.UUID:
 # ---------------------------------------------------------------------------
 # Public Alerts
 # ---------------------------------------------------------------------------
+
+
+@communication_router.get("/public-alerts", summary="List verified published alerts")
+async def list_published_alerts(
+    request: Request,
+    session: DbSession,
+    limit: Annotated[int, Query(ge=1, le=10)] = 5,
+) -> dict[str, Any]:
+    await rate_limit(
+        request,
+        bucket="public_alerts",
+        key=f"ip:{client_ip(request)}",
+        limit=60,
+        window_seconds=60,
+    )
+    rows = await comm_service.list_alerts(
+        session,
+        status="published",
+        verified=True,
+        include_expired=False,
+        limit=limit,
+    )
+    return {
+        "items": [
+            {
+                "id": str(alert.id),
+                "title": alert.title,
+                "summary": alert.body[:280],
+                "category": alert.category,
+                "severity": alert.severity,
+                "status": "published",
+                "verified": True,
+                "geography_id": str(alert.geography_id) if alert.geography_id else None,
+                "published_at": alert.published_at,
+                "expires_at": alert.expires_at,
+                "created_at": alert.created_at,
+            }
+            for alert in rows
+        ]
+    }
 
 
 @communication_router.get("/alerts", summary="List public alerts")
@@ -140,6 +182,7 @@ async def review_alert(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCommAlert,
+    request: Request,
 ) -> dict[str, Any]:
     alert = await comm_service.get_alert(session, _parse_id(alert_id, kind="alert"))
     row = await comm_service.review_alert(
@@ -150,6 +193,21 @@ async def review_alert(
         note=body.get("note"),
     )
     await session.commit()
+    if row.status == "published":
+        await broadcast_live_event(
+            request,
+            "alert.issued",
+            {
+                "id": str(row.id),
+                "title": row.title,
+                "summary": row.body[:280],
+                "severity": row.severity,
+                "status": row.status,
+                "verified": row.verified,
+                "expires_at": row.expires_at,
+                "created_at": row.created_at,
+            },
+        )
     return {"id": str(row.id), "status": row.status}
 
 
@@ -159,10 +217,16 @@ async def resolve_alert(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCommAlert,
+    request: Request,
 ) -> dict[str, Any]:
     alert = await comm_service.get_alert(session, _parse_id(alert_id, kind="alert"))
     row = await comm_service.resolve_alert(session, alert, actor_id=user.id)
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "alert.resolved",
+        {"id": str(row.id), "title": row.title, "status": row.status},
+    )
     return {"id": str(row.id), "status": row.status}
 
 

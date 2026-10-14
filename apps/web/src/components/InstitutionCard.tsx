@@ -21,7 +21,8 @@ export function InstitutionCard({
   const locale = params?.locale ?? "en"
 
   const statusColor =
-    institution.operational_status === "operational"
+    institution.operational_status === "operational" ||
+    institution.operational_status === "active"
       ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
       : institution.operational_status === "under_construction"
         ? "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800"
@@ -58,9 +59,9 @@ export function InstitutionCard({
           </span>
         </div>
 
-        {institution.description ? (
+        {institution.description || institution.address ? (
           <p className="line-clamp-2 text-xs text-(--color-ink-muted)">
-            {institution.description}
+          {institution.description ?? institution.address}
           </p>
         ) : null}
 
@@ -71,9 +72,9 @@ export function InstitutionCard({
               {geographyName}
             </span>
           ) : null}
-          {institution.official_id ? (
+          {(institution.official_identifier ?? institution.official_id) ? (
             <span className="font-mono text-(--text-caption)">
-              ID: {institution.official_id}
+              ID: {institution.official_identifier ?? institution.official_id}
             </span>
           ) : null}
         </div>

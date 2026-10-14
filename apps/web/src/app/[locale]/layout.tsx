@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { CommandPalette } from "@/components/CommandPalette";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { Providers } from "@/components/Providers";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { LOCALES, type Locale } from "@/lib/i18n";
@@ -24,7 +26,9 @@ export default async function LocaleLayout({
   return (
     <Providers locale={locale as Locale}>
       <div className="flex min-h-dvh flex-col">
+        <OfflineBanner />
         <AppShell>{children}</AppShell>
+        <CommandPalette />
         <PwaRegistration />
       </div>
     </Providers>

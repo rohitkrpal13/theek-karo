@@ -15,6 +15,9 @@ pytestmark = pytest.mark.integration
 DB_URL = os.environ.get(
     "TK_TEST_DATABASE_URL", "postgresql+asyncpg://tk:tk_dev_password@127.0.0.1:5434/theek_karo"
 )
+P3_CATEGORY_ID = uuid.UUID("00000000-0000-4000-8000-000000000301")
+P3_USER_ID = uuid.UUID("00000000-0000-4000-8000-000000000302")
+P3_EXTERNAL_SOURCE_ID = uuid.UUID("00000000-0000-4000-8000-000000000303")
 
 
 def _postgres_reachable() -> bool:
@@ -46,15 +49,9 @@ def _run_migrations() -> None:
 
     from alembic import command
 
-    old = os.environ.get("TK_DATABASE_URL")
-    os.environ["TK_DATABASE_URL"] = DB_URL
-    try:
-        command.upgrade(Config("alembic.ini"), "head")
-    finally:
-        if old is None:
-            os.environ.pop("TK_DATABASE_URL", None)
-        else:
-            os.environ["TK_DATABASE_URL"] = old
+    config = Config("alembic.ini")
+    config.attributes["database_url"] = DB_URL
+    command.upgrade(config, "head")
 
 
 def _cleanup() -> None:
@@ -67,27 +64,39 @@ def _cleanup() -> None:
         try:
             factory = create_session_factory(engine)
             async with factory() as session:
-                await session.execute(text("DELETE FROM report_duplicates"))
-                await session.execute(text("DELETE FROM resolution_evidence"))
-                await session.execute(text("DELETE FROM resolution_verifications"))
-                await session.execute(text("DELETE FROM resolution_disputes"))
-                await session.execute(text("DELETE FROM resolution_submissions"))
-                await session.execute(text("DELETE FROM reports WHERE ticket_no LIKE 'P3-%'"))
+                await session.execute(
+                    text(
+                        "DELETE FROM report_duplicates WHERE report_id IN "
+                        "(SELECT id FROM reports WHERE ticket_no = 'P3-R1') "
+                        "OR candidate_report_id IN "
+                        "(SELECT id FROM reports WHERE ticket_no = 'P3-R1')"
+                    )
+                )
+                await session.execute(text("DELETE FROM reports WHERE ticket_no = 'P3-R1'"))
                 await session.execute(text("DELETE FROM issue_types WHERE slug LIKE 'p3test%'"))
-                await session.execute(text("DELETE FROM moderation_appeals"))
-                await session.execute(text("DELETE FROM moderation_decisions"))
-                await session.execute(text("DELETE FROM moderation_actions"))
-                await session.execute(text("DELETE FROM geography_translations"))
-                await session.execute(text("DELETE FROM geographies"))
-                await session.execute(text("DELETE FROM reputation_events"))
-                await session.execute(text("DELETE FROM subscriptions"))
-                await session.execute(text("DELETE FROM rag_chunks"))
-                await session.execute(text("DELETE FROM rag_document_versions"))
-                await session.execute(text("DELETE FROM rag_documents"))
-                await session.execute(text("DELETE FROM gov_dataset_records"))
-                await session.execute(text("DELETE FROM gov_import_jobs"))
-                await session.execute(text("DELETE FROM gov_datasets"))
-                await session.execute(text("DELETE FROM provenance_records_v2"))
+                await session.execute(
+                    text(
+                        "DELETE FROM gov_dataset_records WHERE dataset_id IN "
+                        "(SELECT gd.id FROM gov_datasets gd "
+                        "JOIN data_sources ds ON ds.id = gd.data_source_id "
+                        "WHERE ds.dataset_identifier LIKE 'P3-DS1%')"
+                    )
+                )
+                await session.execute(
+                    text(
+                        "DELETE FROM gov_import_jobs WHERE dataset_id IN "
+                        "(SELECT gd.id FROM gov_datasets gd "
+                        "JOIN data_sources ds ON ds.id = gd.data_source_id "
+                        "WHERE ds.dataset_identifier LIKE 'P3-DS1%')"
+                    )
+                )
+                await session.execute(
+                    text(
+                        "DELETE FROM gov_datasets WHERE data_source_id IN "
+                        "(SELECT id FROM data_sources "
+                        "WHERE dataset_identifier LIKE 'P3-DS1%')"
+                    )
+                )
                 await session.execute(
                     text(
                         "DELETE FROM source_records WHERE source_id IN "
@@ -105,13 +114,54 @@ def _cleanup() -> None:
                 await session.execute(
                     text("DELETE FROM data_sources WHERE dataset_identifier LIKE 'P3-DS1%'")
                 )
-                await session.execute(text("DELETE FROM institution_attribute_values"))
-                await session.execute(text("DELETE FROM institution_attribute_definitions"))
-                await session.execute(text("DELETE FROM institutions"))
-                await session.execute(text("DELETE FROM institution_translations"))
-                await session.execute(text("DELETE FROM institution_types"))
-                await session.execute(text("DELETE FROM issue_types WHERE slug LIKE 'p3test%'"))
-                await session.execute(text("DELETE FROM reports WHERE ticket_no LIKE 'P3-%'"))
+                await session.execute(
+                    text(
+                        "DELETE FROM institution_attribute_values WHERE institution_id IN "
+                        "(SELECT id FROM institutions WHERE source_id = :source_id)"
+                    ),
+                    {"source_id": P3_EXTERNAL_SOURCE_ID},
+                )
+                await session.execute(
+                    text(
+                        "DELETE FROM institution_translations WHERE institution_id IN "
+                        "(SELECT id FROM institutions WHERE source_id = :source_id)"
+                    ),
+                    {"source_id": P3_EXTERNAL_SOURCE_ID},
+                )
+                await session.execute(
+                    text(
+                        "DELETE FROM institution_attribute_definitions WHERE "
+                        "institution_type_id IN "
+                        "(SELECT id FROM institution_types WHERE code LIKE 'school_p3%')"
+                    )
+                )
+                await session.execute(
+                    text("DELETE FROM institutions WHERE source_id = :source_id"),
+                    {"source_id": P3_EXTERNAL_SOURCE_ID},
+                )
+                await session.execute(
+                    text("DELETE FROM institution_types WHERE code LIKE 'school_p3%'")
+                )
+                await session.execute(
+                    text(
+                        "DELETE FROM geography_translations WHERE geography_id IN "
+                        "(SELECT id FROM geographies WHERE official_identifier LIKE 'TEST-IN-%')"
+                    )
+                )
+                await session.execute(
+                    text("DELETE FROM geographies WHERE official_identifier LIKE 'TEST-IN-%'")
+                )
+                await session.execute(
+                    text("DELETE FROM categories WHERE id = :category_id"),
+                    {"category_id": P3_CATEGORY_ID},
+                )
+                await session.execute(
+                    text("DELETE FROM users WHERE id = :user_id"), {"user_id": P3_USER_ID}
+                )
+                await session.execute(
+                    text("DELETE FROM external_sources WHERE id = :source_id"),
+                    {"source_id": P3_EXTERNAL_SOURCE_ID},
+                )
                 await session.commit()
         finally:
             await engine.dispose()
@@ -162,8 +212,9 @@ async def _rows(sql: str, params: dict | None = None):
 
 def test_phase3_domains_on_postgres() -> None:
     _run_migrations()
-    _cleanup()  # idempotent across failed runs
+    _cleanup()
     try:
+        asyncio.run(_seed_test_prerequisites())
         # --- geography registry + spatial containment ---------------------------
         asyncio.run(_run_registry_insert())
 
@@ -184,25 +235,7 @@ def test_phase3_domains_on_postgres() -> None:
         assert any(row["name"] == "P3 Test State" for row in inside)
 
         # --- reports v2: FK enforcement + severity CHECK ------------------------
-        asyncio.run(
-            _exec(
-                """
-                INSERT INTO reports (id, ticket_no, category_id, reporter_id, title,
-                                     description, location, location_accuracy_m,
-                                     institution_id, issue_type_id, severity)
-                VALUES (:rid, 'P3-R1', (SELECT id FROM categories LIMIT 1),
-                        (SELECT id FROM users LIMIT 1), 'P3 report',
-                        'a synthetic phase-3 report body long enough to validate',
-                        ST_GeomFromGeoJSON(:loc), 5, :inst_id, :issue_type, 'high')
-                """,
-                {
-                    "rid": uuid.uuid4(),
-                    "loc": json.dumps({"type": "Point", "coordinates": [75.7, 29.5]}),
-                    "inst_id": "P3-INST",
-                    "issue_type": "P3-ISSUE",
-                },
-            )
-        ) if False else asyncio.run(_insert_report_v2())
+        asyncio.run(_insert_report_v2())
 
         # duplicate check: self-duplicate is rejected by CHECK
         try:
@@ -376,6 +409,27 @@ async def _run_registry_insert() -> None:
     )
 
 
+async def _seed_test_prerequisites() -> None:
+    await _exec(
+        "INSERT INTO categories (id, slug, icon, form_schema, verification_policy, "
+        "attachment_rules, default_locale_keys, created_at, updated_at) "
+        "VALUES (:id, 'p3test_category', 'pin', '{}', '{}', '{}', '{}', now(), now())",
+        {"id": P3_CATEGORY_ID},
+    )
+    await _exec(
+        "INSERT INTO users (id, display_name, status, created_at, updated_at) "
+        "VALUES (:id, 'P3 integration test', 'active', now(), now())",
+        {"id": P3_USER_ID},
+    )
+    await _exec(
+        "INSERT INTO external_sources "
+        "(id, name, publisher, url, retrieval_date, geo_applicability, created_at) "
+        "VALUES (:id, 'P3 integration test source', 'P3', "
+        "'https://p3.example.in/source', now(), '{}', now())",
+        {"id": P3_EXTERNAL_SOURCE_ID},
+    )
+
+
 async def _insert_report_v2() -> None:
     inst = uuid.uuid4()
     issue = uuid.uuid4()
@@ -387,22 +441,19 @@ async def _insert_report_v2() -> None:
     await _exec(
         "INSERT INTO institutions (id, institution_type_id, name, normalized_name, "
         "source_id, operational_status, created_at, updated_at) "
-        "SELECT :id, :t, 'P3 School', 'p3 school', s.id, 'active', now(), now() "
-        "FROM external_sources s LIMIT 1",
-        {"id": inst, "t": inst},
+        "VALUES (:id, :t, 'P3 School', 'p3 school', :source_id, 'active', now(), now())",
+        {"id": inst, "t": inst, "source_id": P3_EXTERNAL_SOURCE_ID},
     )
     await _exec(
         "INSERT INTO issue_types (id, category_id, slug, name, created_at, updated_at) "
-        "VALUES (:id, (SELECT id FROM categories LIMIT 1), "
-        "'p3test_toilet', 'Toilet', now(), now())",
-        {"id": issue},
+        "VALUES (:id, :category_id, 'p3test_toilet', 'Toilet', now(), now())",
+        {"id": issue, "category_id": P3_CATEGORY_ID},
     )
     await _exec(
         "INSERT INTO reports (id, ticket_no, category_id, reporter_id, title, "
         "description, location, location_accuracy_m, institution_id, issue_type_id, severity, "
         "created_at, updated_at) "
-        "VALUES (:rid, 'P3-R1', (SELECT id FROM categories LIMIT 1), "
-        "(SELECT id FROM users LIMIT 1), 'P3 report', "
+        "VALUES (:rid, 'P3-R1', :category_id, :user_id, 'P3 report', "
         "'a synthetic phase-3 report body long enough to validate', "
         "ST_GeomFromGeoJSON(:loc), 5, :inst, :issue, 'high', now(), now())",
         {
@@ -410,6 +461,8 @@ async def _insert_report_v2() -> None:
             "loc": json.dumps({"type": "Point", "coordinates": [75.7, 29.5]}),
             "inst": inst,
             "issue": issue,
+            "category_id": P3_CATEGORY_ID,
+            "user_id": P3_USER_ID,
         },
     )
 

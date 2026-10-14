@@ -877,8 +877,7 @@ async def tool_department_briefing(
         "departments": result,
         "count": len(result),
         "disclaimer": (
-            "Aggregate department metrics; individual case details"
-            " require authorization."
+            "Aggregate department metrics; individual case details require authorization."
         ),
     }
 

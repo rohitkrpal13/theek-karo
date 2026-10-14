@@ -29,6 +29,7 @@ from tk_api.api.routers.measurement import measurement_router
 from tk_api.api.routers.media import media_router
 from tk_api.api.routers.notifications import notifications_router
 from tk_api.api.routers.production import production_router
+from tk_api.api.routers.realtime import bulk_router, realtime_router
 from tk_api.api.routers.reports import reports_router
 from tk_api.api.routers.search import search_router
 from tk_api.api.routers.security import security_router
@@ -46,6 +47,7 @@ api_v1_router.include_router(users_router)
 api_v1_router.include_router(geography_router)
 api_v1_router.include_router(institutions_router)
 api_v1_router.include_router(civic_router)
+api_v1_router.include_router(bulk_router)
 api_v1_router.include_router(reports_router)
 api_v1_router.include_router(media_router)
 api_v1_router.include_router(measurement_router)
@@ -57,6 +59,7 @@ api_v1_router.include_router(community_router)
 api_v1_router.include_router(gis_router)
 api_v1_router.include_router(govdata_router)
 api_v1_router.include_router(search_router)
+api_v1_router.include_router(realtime_router)
 api_v1_router.include_router(departments_router)
 api_v1_router.include_router(cases_router)
 api_v1_router.include_router(resolution_router)

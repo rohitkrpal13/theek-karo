@@ -20,6 +20,9 @@ export default function ReportsFeedPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState(false)
+  const [reloadVersion, setReloadVersion] = useState(0)
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState(searchParams.get("category") ?? "")
@@ -44,6 +47,7 @@ export default function ReportsFeedPage() {
 
     async function loadReports() {
       setLoading(true)
+      setLoadError(false)
       try {
         const res = await reportsApi.list({
           category_slug: selectedCategory || undefined,
@@ -61,6 +65,7 @@ export default function ReportsFeedPage() {
         if (!cancelled) {
           setReports([])
           setNextCursor(null)
+          setLoadError(true)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -71,16 +76,22 @@ export default function ReportsFeedPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedCategory, selectedSeverity, selectedStatus, selectedCampaign])
+  }, [selectedCategory, selectedSeverity, selectedStatus, selectedCampaign, reloadVersion])
+
+  function retryLoadReports() {
+    setReloadVersion((version) => version + 1)
+  }
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return
     setLoadingMore(true)
+    setLoadMoreError(false)
     try {
       const res = await reportsApi.list({
         category_slug: selectedCategory || undefined,
         severity: (selectedSeverity as ReportSeverity) || undefined,
         status: (selectedStatus as ReportStatus) || undefined,
+        campaign_id: selectedCampaign || undefined,
         cursor: nextCursor,
         limit: 12,
       })
@@ -88,6 +99,7 @@ export default function ReportsFeedPage() {
       setNextCursor(res.next_cursor)
     } catch (err) {
       console.error("Failed to load more reports", err)
+      setLoadMoreError(true)
     } finally {
       setLoadingMore(false)
     }
@@ -177,6 +189,21 @@ export default function ReportsFeedPage() {
             <Skeleton key={i} height={160} />
           ))}
         </div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="rounded-(--radius-lg) border border-(--color-error)/30 bg-(--color-error)/5 p-8 text-center"
+        >
+          <p className="text-sm text-(--color-ink)">{t("reports.load_error")}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={retryLoadReports}
+          >
+            {t("common.retry")}
+          </Button>
+        </div>
       ) : reports.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {reports.map((report) => {
@@ -200,15 +227,24 @@ export default function ReportsFeedPage() {
       )}
 
       {/* Load More Button */}
-      {nextCursor && (
+      {nextCursor && !loadError && (
         <div className="flex justify-center pt-4">
+          {loadMoreError && (
+            <p role="alert" className="mr-3 self-center text-sm text-(--color-error)">
+              {t("reports.load_more_error")}
+            </p>
+          )}
           <Button
             variant="outline"
             size="md"
             disabled={loadingMore}
             onClick={() => void handleLoadMore()}
           >
-            {loadingMore ? "Loading more…" : "Load more reports"}
+            {loadingMore
+              ? t("reports.loading_more")
+              : loadMoreError
+                ? t("common.retry")
+                : t("reports.load_more")}
           </Button>
         </div>
       )}

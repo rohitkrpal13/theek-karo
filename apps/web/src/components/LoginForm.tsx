@@ -35,7 +35,9 @@ export function LoginForm() {
   const [mfaCode, setMfaCode] = useState("")
 
   function applyTokens(body: AuthTokens) {
-    login(body.access_token, body.user)
+    // modern: store both tokens if available; legacy call still works
+    if (body.refresh_token) login(body.access_token, body.refresh_token, body.user)
+    else login(body.access_token, body.user)
     router.push(`/${locale}/`)
   }
 

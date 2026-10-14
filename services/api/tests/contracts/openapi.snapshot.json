@@ -2710,6 +2710,108 @@
         }
       }
     },
+    "/api/v1/reports/bulk": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Bulk create reports (transactional, idempotent)",
+        "description": "Accepts `{ items: [{title, description, category_id, ...}, ...], idempotency_key?: string }`.\n\nValidates each item via `Report` schemas; all-or-nothing 422 on first\ninvalid. Requires auth; limited to 25 items/request (DoS guard).",
+        "operationId": "bulk_create_api_v1_reports_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/stream": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "NDJSON streaming of reports (cursor)",
+        "description": "Streams reports as NDJSON (`application/x-ndjson`) with heartbeat.\n\nUseful for large exports without loading all rows into memory. Client\nreads line-delimited JSON; `event: done` signals completion.",
+        "operationId": "stream_reports_api_v1_reports_stream_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports/drafts": {
       "get": {
         "tags": [
@@ -10915,6 +11017,138 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/stream": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "SSE live stream (heartbeat + report events)",
+        "description": "EventSource stream: `report.created`, `heartbeat`. 30s keepalive.\n\nWhen Redis is available, events are broadcast via pubsub (`tk:live`).\nOtherwise, periodic heartbeat only \u2014 never fails.",
+        "operationId": "live_stream_api_v1_live_stream_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/activity": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "Live activity feed (polling-optimized)",
+        "description": "Lightweight feed for polling (12s). Returns `items` + `next_cursor`.",
+        "operationId": "live_activity_api_v1_live_activity_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/stats": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "Real-time operational pulse stats",
+        "description": "Real-time civic pulse metrics for live feeds and telemetry indicators.",
+        "operationId": "live_stats_api_v1_live_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -20833,6 +21067,53 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Bulk Assign Api V1 Government Bulk Assign Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/communication/public-alerts": {
+      "get": {
+        "tags": [
+          "communication"
+        ],
+        "summary": "List verified published alerts",
+        "operationId": "list_published_alerts_api_v1_communication_public_alerts_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Published Alerts Api V1 Communication Public Alerts Get"
                 }
               }
             }

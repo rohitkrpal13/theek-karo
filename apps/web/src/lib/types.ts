@@ -91,10 +91,9 @@ export interface InstitutionType {
   id: string
   code: string
   name_key: string
-  category_id: string | null
-  default_schema: Record<string, unknown>
-  description: string | null
+  attribute_schema: Record<string, unknown>
   is_active: boolean
+  created_at: string
 }
 
 export interface InstitutionAttributeDef {
@@ -135,20 +134,28 @@ export interface InstitutionTranslation {
 
 export interface Institution {
   id: string
-  type_id: string
-  official_id: string | null
+  institution_type_id: string
   name: string
-  slug: string
-  description: string | null
+  normalized_name: string
+  official_identifier: string | null
+  address: string | null
   geography_id: string | null
+  contact_phone?: string | null
+  contact_email?: string | null
+  website?: string | null
+  management_type?: string | null
+  description?: string | null
   location_geojson?: GeoJsonPoint | null
   location_lat?: number | null
   location_lon?: number | null
-  operational_status: "operational" | "closed" | "under_construction" | "relocated"
-  verification_state: "unverified" | "official" | "community_verified"
-  confidence_score: number
-  source_id: string | null
-  is_active: boolean
+  operational_status: string
+  verification_state: string
+  confidence_score?: number | null
+  source_id?: string | null
+  type_id?: string
+  official_id?: string | null
+  slug?: string
+  is_active?: boolean
   created_at: string
   updated_at: string
 }
@@ -785,10 +792,9 @@ export interface ReportEvidence {
 
 export interface UploadSlotResponse {
   media_id: string
-  object_key: string
-  upload_url: string | null
-  headers: Record<string, string>
-  expires_in_seconds: number
+  upload_method: "api" | "presigned"
+  presigned_url: string | null
+  expires_in: number
 }
 
 export interface DuplicateCandidate {

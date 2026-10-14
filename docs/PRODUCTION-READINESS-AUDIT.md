@@ -1,30 +1,66 @@
 # Production Readiness Audit (Phase 16)
 
-Status: **Initial audit — 2026-08-17**
+Status: **Evidence refresh — 2026-10-14**
 
-This document is the Phase 16 baseline audit of the Theek Karo platform. Every
-statement is backed by repository evidence (file paths + observed behavior).
-Nothing in this document claims readiness without verification.
+This document records verified repository checks and outstanding go-live
+blockers. The detailed sections below began as a 2026-08-17 baseline; where
+their status conflicts with this refresh, this evidence section is current.
+No cloud deployment or external operational control is claimed as verified.
+See [PRODUCTION-READINESS-PLAN.md](./PRODUCTION-READINESS-PLAN.md) for the
+sequenced implementation plan and exit criteria.
 
 Legend: `READY` · `NEEDS_IMPROVEMENT` · `BLOCKED` · `UNKNOWN`
 
 ---
 
-## 0. Evidence basis
+## 0. Current verified evidence (2026-10-14)
 
-Audit performed against the working tree (no git history — see §4) with:
+Checks run against the working tree:
 
-- Backend: `services/api/src/tk_api` — 133 files type-checked clean (`mypy --strict`),
-  204 files ruff-clean (`ruff check .` + `ruff format --check .`).
-- Tests: `237 passed / 4 failed` on `pytest -q` (failures: 3 pre-existing
-  `tests/test_community.py` harness issues + 1 time-of-day-flaky
-  `test_notifications_db` quiet-hours mismatch — see §16).
-- CI: `.github/workflows/{ci,deploy,rollback}.yml`; infra: `infra/terraform/main.tf`,
-  `infra/prometheus/{prometheus,rules}.yml`, `infra/grafana/`, `infra/k6/slo-smoke.js`.
-- Compose stack: postgres (postgis 16), redis 7, minio, api, worker (+ prometheus,
-  grafana) with healthchecks.
-- Frontend: `apps/web` (Next.js 16, standalone output, proxy to API, PWA manifest
-  + service worker present).
+- Frontend: `npm run lint`, `npx tsc --noEmit`, and `npm test` passed (63 tests
+  across 18 files); `npm run build` passed on Next.js 16.4.0 and Vitest 4.1.11.
+- Backend: `uv run ruff format --check .`, `uv run ruff check .`, and
+  `uv run mypy src` passed. `uv run pytest -q
+  --ignore=tests/integration/test_backup_restore.py` passed (616 passed,
+  1 skipped). This includes 10 PostgreSQL integration tests against an
+  isolated PostGIS database.
+- The backup/restore test was not run locally because it creates and drops
+  temporary databases. The integration CI job includes this test, but its
+  GitHub Actions result was not inspected.
+- The Phase 3 test creates explicit test fixtures and only cleans rows matching
+  its own identifiers.
+- Migration `0022` widens Alembic's revision column before applying its
+  >32-character revision ID; migration to head and the Phase 3 integration
+  test passed on the isolated database.
+- `npm audit --omit=dev --audit-level=moderate` reported zero production
+  dependency advisories. Full `npm audit` still reports five HIGH advisories
+  in the `eslint-config-next` -> `fast-glob` -> `micromatch` -> `braces`
+  development lint toolchain; the available npm fix downgrades the Next ESLint
+  config to 14.2.35, incompatible with the app's Next 16. No downgrade was
+  applied.
+- Frontend lint, TypeScript, 63 tests, and the Next.js 16.4.0 production build
+  passed. Production preview `/hi/explore` returned HTTP 200 with CSP (without
+  `unsafe-eval`), HSTS, and the configured security headers. Dev server and API
+  `/healthz` and `/readyz` returned HTTP 200.
+- Frontend `/api/v1/:path*` and `/api/public/v1/:path*` proxy to the configured
+  API upstream.
+- The logged-out public alert banner now uses a separate rate-limited
+  `GET /api/v1/communication/public-alerts` endpoint. It returns only
+  verified, published, unexpired alerts and excludes internal source/body
+  fields; the existing full alert list remains staff-protected. Backend
+  filtering and frontend retry/expiry behavior have focused tests.
+- Institution suggestions query the first-party registered-institution
+  directory, debounce requests, support keyboard selection, and search address
+  words as well as institution names. Empty catalog results remain explicit;
+  no unapproved external dataset is represented as real data.
+- Request-size middleware now applies the configured global cap as an
+  additional limit alongside the existing content-type limits; focused tests
+  verify oversized declared and streamed requests return HTTP 413.
+- `npm audit --omit=dev --audit-level=moderate` reported zero production
+  dependency vulnerabilities in this refresh.
+- The live institution catalog remains empty, and the UDISE+ reuse clearance
+  recorded in `docs/PROVENANCE.md` is unresolved; official institution imports
+  must remain blocked until approved source data is available.
 
 ---
 
@@ -33,12 +69,12 @@ Audit performed against the working tree (no git history — see §4) with:
 | Area | Status | Primary evidence |
 |------|--------|------------------|
 | Architecture | READY | `docs/ARCHITECTURE.md`; monolith + worker, modular routers |
-| Security (application) | NEEDS_IMPROVEMENT | Headers/CSP/MFA gaps (§8) |
-| Authentication | NEEDS_IMPROVEMENT | Argon2id + JWT strong; no MFA, no lockout (§9) |
-| Authorization | NEEDS_IMPROVEMENT | RBAC + permissions + ownership checks exist; IDOR suite not yet run (§10) |
-| Database | NEEDS_IMPROVEMENT | PostGIS/PG16, migrations round-trip in CI; index plan audit missing (§13) |
-| API | NEEDS_IMPROVEMENT | Problem+JSON, rate limits, request IDs; public API v1 not proxied by web (§3) |
-| Frontend | NEEDS_IMPROVEMENT | PWA present; CSP/HSTS headers absent at app layer (§18) |
+| Security (application) | NEEDS_IMPROVEMENT | Headers configured; CSP, live TLS, and MFA rollout still require environment verification (§8) |
+| Authentication | NEEDS_IMPROVEMENT | Argon2id/JWT, TOTP MFA, per-account backoff implemented; live privileged-role enforcement not verified (§9) |
+| Authorization | NEEDS_IMPROVEMENT | RBAC and focused IDOR tests exist; complete tenant-isolation matrix remains unverified (§10) |
+| Database | NEEDS_IMPROVEMENT | PostGIS/PG16 and 41 migrations tested to head; production backup/restore and index plan audit remain unverified (§13) |
+| API | NEEDS_IMPROVEMENT | Problem+JSON, rate limits, request IDs, public alerts, and configured request-size limits; reverse-proxy body limits and version-policy enforcement need verification (§3, ADR-015) |
+| Frontend | NEEDS_IMPROVEMENT | Production headers and both API proxies configured; five HIGH dev-toolchain advisories remain (§18) |
 | Infrastructure | READY (unapplied) | Terraform for AWS ECS/RDS/ElastiCache/S3/CF — `terraform validate` only gate (§19) |
 | CI/CD | READY (partial) | Gates + migration round-trip + trivy; approval/canary absent (§19) |
 | Observability | READY (partial) | JSON logs, request-id, `/metrics`, `/healthz`, `/readyz`, Prom+Grafana, OTel opt-in (§15) |
@@ -51,7 +87,7 @@ Audit performed against the working tree (no git history — see §4) with:
 | GIS | READY | PostGIS + boundary ingest + viewport APIs + tests |
 | Analytics | READY | Analytics service + metrics registry + public endpoints |
 | Open Data (Phase 15) | NEEDS_IMPROVEMENT | Public API implemented; docs (PUBLIC-API/OPEN-DATA/DATA-*) missing |
-| Disaster Recovery | BLOCKED | No RPO/RTO, no backup restore test, no DR docs (§16) |
+| Disaster Recovery | BLOCKED | Proposed RPO/RTO and runbook exist; production restore drill and infrastructure evidence are missing (§20) |
 | Privacy / DPDP | NEEDS_IMPROVEMENT | PII inventory missing; anonymization exists; retention undefined (§12) |
 | Compliance | NEEDS_IMPROVEMENT | `docs/COMPLIANCE-DPDP.md` exists; DPDP readiness unverified externally |
 | Performance | NEEDS_IMPROVEMENT | k6 SLO smoke only (10 VU/30s); no load/spike scale evidence (§15) |
@@ -85,13 +121,19 @@ headers `X-Request-Id`/`X-Correlation-Id` (`api/middleware.py`), 43
 `rate_limit(...)` call sites, OpenAPI snapshot contract test
 (`tests/test_openapi_snapshot.py`), version endpoint `/api/v1/version`.
 
+The web proxy now includes both `/api/v1/:path*` and `/api/public/v1/:path*`
+rewrites in `apps/web/next.config.ts`.
+
 Gaps:
-- `/api/public/v1` is not proxied by the Next.js rewrite table
-  (`apps/web/next.config.ts` only rewrites `/api/v1/:path*`) — the Phase 15
-  public API is unreachable from the web app in dev/self-host.
-- No global request-body size middleware beyond per-route validation
-  (`max_request_body_bytes` setting exists, enforcement not verified).
-- No API versioning policy doc beyond `api_v1_prefix`.
+- Request-size middleware enforces declared and streamed body sizes against
+  configured and content-type limits; reverse-proxy limits still require
+  verification.
+- ADR-015 defines additive-only `/api/v1` changes and a minimum six-month
+  migration window for breaking `/api/v2` changes; implementation still needs
+  explicit deprecation/compatibility enforcement and versioned contract checks.
+- The public banner uses a dedicated, rate-limited endpoint with a minimal
+  response restricted to verified, published, unexpired alerts. The full alert
+  listing and write/review operations remain protected.
 
 ## 4. Repository / source control
 
@@ -141,12 +183,11 @@ found**. Only dev defaults with explicit prod guards
 
 Caveats:
 - Full history scan impossible (no commits, §4). Fresh commit must be scanned.
-- `infra/terraform/main.tf` renders `TK_DATABASE_URL` with
-  `var.db_password` into the ECS task environment (plaintext in task
-  definition) — move to Secrets Manager like JWT/AI keys (§8 of brief).
-- Worker task definition omits `TK_MEDIA_MINIO_SECRET_KEY` entirely —
-  worker-side media jobs would lack credentials (needs verification or
-  completion of the secret mapping).
+- Terraform task definitions now source the database URL, JWT, AI, and media
+  secrets from Secrets Manager, including the worker media key. Terraform has
+  not been applied; verify secret access in a real plan/deployment, and protect
+  Terraform state because secret values are represented in Terraform inputs
+  and secret-version resources.
 
 ## 8. Application security headers
 
@@ -154,10 +195,14 @@ Status: **NEEDS_IMPROVEMENT**
 
 `api/security.py` sets: `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`,
-`Permissions-Policy`. Gaps: no `Content-Security-Policy`, no `HSTS`
-(intentionally deferred to CDN/ALB per comment — must be implemented in
-TERRAFORM/ALB listener and verified, not promised), no `Cross-Origin-*
-` resource policy. CSP must not break the Next.js app (brief §78).
+`Permissions-Policy`. The Next.js server additionally sets CSP, HSTS,
+`Cross-Origin-Opener-Policy`, and `Cross-Origin-Resource-Policy`; the production
+build was smoke-tested locally with those headers. Development CSP allows
+`unsafe-eval` for Next.js dev tooling; production CSP does not.
+
+Gaps: the production CSP still permits `unsafe-inline`; HSTS must be verified
+at the real TLS termination point, including subdomain and preload readiness.
+Headers have not been validated through the deployed CDN/ALB.
 
 ## 9. Authentication & sessions
 
@@ -169,11 +214,13 @@ attempts, 600 s TTL, 120 s resend cooldown), rate limits on 14 auth routes
 (`users_auth.py`), OAuth sign-in (Google — verify current provider config in
 staging/prod), refresh-token rotation + revocation endpoints.
 
+TOTP MFA and per-account login backoff are implemented and covered by tests.
+Production/staging configuration fails closed unless
+`TK_MFA_ENFORCE_PRIVILEGED=true`; that setting and required role enrollment
+still need verification in the real environment.
+
 Gaps (brief §9–13, §68):
-- **No MFA** for admin/department-manager/mod reviewer roles.
-- **No account lockout/backoff** — only IP rate limits; no per-account
-  throttling (brute-force/credential-stuffing exposure).
-- Password reset + OTP enumeration hardening not explicitly tested.
+- Password reset + OTP enumeration hardening not fully verified.
 - Session/device management (list) not verified.
 
 ## 10. Authorization & IDOR
@@ -185,10 +232,10 @@ ownership checks on user-scoped routes (e.g. export jobs, saved queries,
 corrections); department scope checks in `cases`/`departments` modules;
 `core/audit.py` audit trail.
 
-Gaps: no automated IDOR test suite (brief §15: `/reports/{id}`,
-`/cases/{id}`, `/users/{id}`, `/institutions/{id}`, `/documents/{id}`);
-tenant-isolation matrix (department A ≠ B, district A ≠ B) not systematically
-tested. Phase 16 must add these tests (Step 26 `tests/test_security_authorization.py`).
+Focused IDOR and tenant-isolation tests cover reports, evidence objects, cases,
+users, and institutions in `tests/test_security_authorization.py`; they passed
+in the non-integration suite. Remaining gap: broaden the role/resource matrix
+and verify authorization against production-like seeded tenants.
 
 ## 11. AI / RAG / MCP tools
 
@@ -274,13 +321,15 @@ error-tracking integration (Sentry etc.), no alert routing documented past
 
 Status: **NEEDS_IMPROVEMENT**
 
-- `pytest`: 237 passed / 4 failed. Failures:
-  - 3× `tests/test_community.py` — pre-existing harness defects around
-    follow/notification grouping (double `_setup`, worker-dispatch mocks);
-    known since before this phase, no product regression.
-  - 1× `tests/integration/test_notifications_db.py` — quiet-hours window
-    (21:00–07:00 IST): sms/email rows deferred, receipts asserted
-    unconditionally → flaky by time-of-day, not a code regression.
+- Backend lint, formatting, type checks, and non-integration tests passed on
+  2026-10-14 (604 passed, 1 skipped). Ten PostgreSQL integration tests passed
+  against an isolated database; the backup/restore test was not run locally
+  because it creates and drops two temporary databases.
+- Migration-to-head and the Phase 3 registry/report/provenance integration
+  test passed after fixing long Alembic revision storage and making fixtures
+  independent of pre-seeded shared data.
+- JWT test keys now meet the SHA-256 HMAC minimum length. The only test-suite
+  warning is Starlette's deprecation notice for its httpx-backed TestClient.
 - No load/spike/chaos evidence beyond k6 SLO smoke (10 VU/30 s).
 - No end-to-end civic lifecycle test (brief §157) and no complete
   authorization lifecycle test (brief §158).
@@ -303,14 +352,16 @@ verified, offline report draft not implemented (PWA shell only).
 
 Status: **NEEDS_IMPROVEMENT**
 
-Ready: `reactStrictMode`, `output: standalone`, proxy rewrite for `/api/v1`,
-PWA assets, tested (vitest 37 passed previously — re-verify on Phase 16 gate),
-build green.
+Ready: `reactStrictMode`, `output: standalone`, proxy rewrites for `/api/v1`
+and `/api/public/v1`, PWA assets, CSP/HSTS and related security headers in
+`next.config.ts`, Vitest 4.1.11 (63 tests passing), and a successful Next.js
+16.4.0 production build. Local dev and production preview routes both returned
+HTTP 200; the prod CSP excludes `unsafe-eval`.
 
-Gaps: no CSP/security headers on the web server, no `headers()` config in
-`next.config.ts`, no dependency audit step for the frontend, `/api/public/v1`
-rewrite missing (§3), no e2e harness evidence beyond Playwright scaffolding
-(`web-e2e`).
+Gaps: full `npm audit` still reports five HIGH issues in transitive
+development-only lint dependencies. Production dependencies currently audit
+clean; CI gates that production dependency audit. No e2e execution evidence
+beyond Playwright scaffolding (`web-e2e`).
 
 ## 19. Infrastructure, CI/CD, cost
 
@@ -336,10 +387,14 @@ Gaps:
 
 Status: **BLOCKED**
 
-- RDS retention=7 (implicit daily + PITR window) — but RPO/RTO not defined,
-  restore never exercised, no backup restore test in CI or docs.
-- No DR document, no runbook beyond `docs/RUNBOOKS.md` promise, no incident
-  response process, no status page, no backup/restore automation.
+- `docs/DISASTER-RECOVERY.md` defines proposed RPO/RTO targets and a restore
+  procedure; these remain a framework, not measured service objectives.
+- `tests/integration/test_backup_restore.py` exercises a synthetic logical
+  dump/restore and runs in the integration CI job, but was not executed in this
+  local session. No AWS RDS snapshot/PITR restore has been demonstrated.
+- RDS retention=7 is configured; restore has not been exercised against the
+  production infrastructure. No incident response/on-call process or status
+  page has been verified.
 - Privacy: account deletion + anonymization exists (`DELETE /users/me`,
   `auth/service.py` §7); DPDP doc exists; but PII inventory, retention
   schedule, and deletion of media/evidence workflows are undefined.
@@ -349,9 +404,10 @@ Status: **BLOCKED**
 ## 21. Top gaps to close in Phase 16 (ranked)
 
 1. Source control: initial commit + branch protection (unblocks everything).
-2. DR: RPO/RTO definitions, automated backup + restore test, `DISASTER-RECOVERY.md`.
-3. Security: MFA for privileged roles, account backoff, CSP+HSTS, IDOR suite,
-   worker MinIO secret fix, move DB URL to Secrets Manager in TF.
+2. DR: approve and run CI restore test; exercise AWS RDS recovery and verify
+   the proposed RPO/RTO in `DISASTER-RECOVERY.md`.
+3. Security: verify privileged MFA enforcement, TLS/HSTS at the deployed edge,
+   CSP policy, and Terraform secret/state handling in a staging deployment.
 4. Observability: enable OTel traces, alert routing, ops dashboard.
 5. Reliability: task retries/backoff + DLQ, idempotency on queue-dispatch,
    fix flaky community/notification tests.

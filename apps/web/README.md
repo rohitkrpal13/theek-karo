@@ -16,6 +16,16 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Report evidence uploads
+
+Attaching evidence requires signing in. Reports can still be submitted without files. The form accepts up to five JPEG, PNG, or WebP images, up to 8 MB each.
+
+For local development, the upload CSP allows the default MinIO origin at `http://127.0.0.1:9000`. If the API uses a different HTTP object-storage origin, set `NEXT_PUBLIC_MEDIA_UPLOAD_ORIGIN` to that origin before starting Next.js. HTTPS upload origins are already allowed.
+
+## Institution discovery
+
+Explore suggestions and name searches use institutions registered in Theek Karo. Nearby search requests browser location only after the user selects **Use my current location**; coordinates are sent to Theek Karo's `/gis/map/nearby` API and are not sent to an external place-search provider. An empty result means the registered, coordinate-bearing directory has no matching institution data; it is not filled with estimated or synthetic places. See [`docs/PROVENANCE.md`](../../docs/PROVENANCE.md) for dataset licensing and coverage status.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

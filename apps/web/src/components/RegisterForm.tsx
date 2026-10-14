@@ -106,7 +106,8 @@ export function RegisterForm() {
         setError(t("auth.error.general"))
         return
       }
-      login(body.access_token, body.user)
+      if (body.refresh_token) login(body.access_token, body.refresh_token, body.user)
+      else login(body.access_token, body.user)
       router.push(`/${locale}/`)
     } catch (e) {
       setError(e instanceof Error ? e.message : t("auth.error.general"))

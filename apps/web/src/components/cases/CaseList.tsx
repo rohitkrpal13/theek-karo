@@ -9,6 +9,7 @@ import { en } from "@/lib/i18n"
 import type { TFunction } from "@/lib/i18n"
 import { useT } from "@/lib/i18n-client"
 import { Badge, EmptyState, ErrorState, Spinner } from "@/components/ui/primitives"
+import { useRealtimeEvents } from "@/hooks/useRealtimeEvents"
 
 export const CASE_STATUS_KEYS = new Set([
   "under_review",
@@ -55,6 +56,21 @@ export function CaseList() {
     }
   }, [])
 
+  // Auto-reload on real-time case events
+  const { isConnected } = useRealtimeEvents({
+    onEvent: (event) => {
+      if (
+        event === "case.created" ||
+        event === "case.transitioned" ||
+        event === "case.assigned" ||
+        event === "case.responded" ||
+        event === "case.escalated"
+      ) {
+        void load()
+      }
+    },
+  })
+
   useEffect(() => {
     let cancelled = false
     async function loadCases() {
@@ -76,7 +92,25 @@ export function CaseList() {
   if (cases.length === 0) return <EmptyState title={t("cases.empty")} />
 
   return (
-    <ul className="divide-y divide-stone-200 rounded-md border border-stone-200 bg-white">
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs text-stone-500 px-1">
+        <span className="flex items-center gap-1.5 font-medium">
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+            }`}
+          />
+          {isConnected ? "Live Case Sync Active" : "Polling Case Status"}
+        </span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="hover:text-stone-800 underline underline-offset-2"
+        >
+          Refresh
+        </button>
+      </div>
+      <ul className="divide-y divide-stone-200 rounded-md border border-stone-200 bg-white">
       {cases.map((c) => (
         <li key={c.id}>
           <Link
@@ -97,6 +131,7 @@ export function CaseList() {
           </Link>
         </li>
       ))}
-    </ul>
+      </ul>
+    </div>
   )
 }

@@ -31,7 +31,7 @@ import tk_api.core.models  # noqa: F401  # register the full schema (FK resoluti
 from tk_api.auth.security import hash_password
 from tk_api.core.config import Settings, get_settings
 from tk_api.core.db import create_engine, create_session_factory
-from tk_api.departments.models import Department, DepartmentUser, DepartmentType
+from tk_api.departments.models import Department, DepartmentType, DepartmentUser
 from tk_api.users.models import Role, User, UserRole
 
 DEMO_ACCOUNTS = [
@@ -103,9 +103,7 @@ async def seed(settings: Settings) -> None:
         # (case scope requires an explicit department membership).
         dept = await session.scalar(select(Department).where(Department.slug == "demo-development"))
         if dept is None:
-            dept_type = await session.scalar(
-                select(DepartmentType).limit(1)
-            )
+            dept_type = await session.scalar(select(DepartmentType).limit(1))
             if dept_type is None:
                 raise RuntimeError(
                     "no department types seeded — run alembic upgrade head and seed_civic first"
