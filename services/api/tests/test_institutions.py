@@ -122,3 +122,9 @@ def test_institution_crud(client: TestClient, sender) -> None:
     list_res = client.get("/api/v1/institutions?q=Phulwari")
     assert list_res.status_code == 200
     assert list_res.json()["total"] >= 1
+    address_res = client.get("/api/v1/institutions?q=Sharif%2C%20Patna")
+    assert address_res.status_code == 200
+    assert any(item["id"] == inst_id for item in address_res.json()["items"])
+    punctuation_res = client.get("/api/v1/institutions?q=%21%21%21")
+    assert punctuation_res.status_code == 200
+    assert punctuation_res.json()["total"] == 0

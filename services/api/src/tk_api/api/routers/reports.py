@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -14,12 +14,15 @@ from fastapi.responses import JSONResponse
 from tk_api.ai import analysis as ai_analysis
 from tk_api.ai import service as ai_service
 from tk_api.api.deps import DbSession, OptionalUser, require_active
+from tk_api.core.config import get_settings
 from tk_api.core.db import create_session_factory
 from tk_api.core.errors import ApiError
 from tk_api.core.idempotency import IDEMPOTENCY_TTL_SECONDS, IdempotencyRecord
 from tk_api.core.logging import log_extra
 from tk_api.core.rate_limit import client_ip, rate_limit
+from tk_api.reports import broadcast_service
 from tk_api.reports import service as reports_service
+from tk_api.reports.models import SocialBroadcast
 from tk_api.reports.schemas import (
     AiIntakeSuggestRequest,
     CommentCreate,
@@ -32,12 +35,17 @@ from tk_api.reports.schemas import (
     ReportEvidenceCompleteRequest,
     ReportEvidenceUploadRequest,
     ReportFieldsUpdate,
+    SocialBroadcastRequest,
+    SocialBroadcastResponse,
+    SocialPostResponse,
     TransitionRequest,
     VerificationCreate,
 )
+from tk_api.reports.social import build_social_post_package
 from tk_api.reports.state import timeline
 
 logger = logging.getLogger("tk_api.reports")
+
 
 _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
@@ -672,3 +680,238 @@ async def refresh_analysis(
         actor_id=user.id,
         refresh=True,
     )
+
+
+@reports_router.get(
+    "/{report_id}/social-post",
+    response_model=SocialPostResponse,
+    summary="Get optimized social media posts for X and Instagram with authority tags",
+)
+async def get_social_post(
+    request: Request,
+    report_id: str,
+    session: DbSession,
+    tone: Literal["urgent", "nudge", "accountability"] = "urgent",
+    viewer: OptionalUser = None,
+) -> Any:
+    await rate_limit(
+        request,
+        bucket="social_post_read",
+        key=f"ip:{client_ip(request)}",
+        limit=60,
+        window_seconds=60,
+    )
+    parsed = _parse_id(report_id, kind="report", error_kind="invalid_report_id")
+    report = await reports_service.get_report(session, parsed, viewer=viewer)
+
+    # Privacy & status gates: private reports cannot be amplified; drafts cannot be amplified
+    if report.get("visibility") != "public":
+        raise ApiError(
+            "Private reports cannot be amplified publicly",
+            403,
+            "private_report_amplification_forbidden",
+        )
+    if report.get("status") == "draft":
+        raise ApiError(
+            "Draft reports cannot be amplified",
+            400,
+            "draft_cannot_be_amplified",
+        )
+
+    evidence_urls: list[str] = []
+    for ev in report.get("evidence", []):
+        if ev.get("url"):
+            evidence_urls.append(ev["url"])
+
+    location_coords: list[float] | None = None
+    loc = report.get("location")
+    if isinstance(loc, dict) and loc.get("type") == "Point" and "coordinates" in loc:
+        coords = loc["coordinates"]
+        if isinstance(coords, list):
+            location_coords = [float(c) for c in coords]
+
+    settings = get_settings()
+    return build_social_post_package(
+        report_id=str(report["id"]),
+        ticket_no=report["ticket_no"],
+        title=report["title"],
+        description=report["description"],
+        category_slug=report.get("category_slug"),
+        severity=report.get("severity"),
+        address_hint=report.get("address_hint"),
+        location_coords=location_coords,
+        tone=tone,
+        evidence_urls=evidence_urls,
+        base_web_url=settings.app_base_url,
+    )
+
+
+@reports_router.post(
+    "/{report_id}/social-broadcast",
+    response_model=SocialBroadcastResponse,
+    summary="Broadcast verified report via official Theek Karo civic bot",
+)
+async def broadcast_social_post(
+    request: Request,
+    report_id: str,
+    payload: SocialBroadcastRequest,
+    session: DbSession,
+    user: ReporterUser,
+) -> Any:
+    await rate_limit(
+        request,
+        bucket="social_broadcast",
+        key=f"user:{user.id}",
+        limit=5,
+        window_seconds=60,
+    )
+    parsed = _parse_id(report_id, kind="report", error_kind="invalid_report_id")
+    report = await reports_service.get_report(session, parsed, viewer=user)
+
+    # Privacy & status gates
+    if report.get("visibility") != "public":
+        raise ApiError(
+            "Private reports cannot be broadcast publicly",
+            403,
+            "private_report_amplification_forbidden",
+        )
+    if report.get("status") == "draft":
+        raise ApiError(
+            "Draft reports cannot be broadcast",
+            400,
+            "draft_cannot_be_amplified",
+        )
+
+    # Authorization gate: only report creator or civic staff may request bot escalation
+    is_reporter = str(report.get("reporter_id")) == str(user.id)
+    role_codes = set(user.role_codes()) if hasattr(user, "role_codes") else set()
+    staff_roles = {"admin", "super_admin", "moderator", "authority", "platform_admin"}
+    is_staff = bool(role_codes.intersection(staff_roles))
+    if not (is_reporter or is_staff):
+        raise ApiError(
+            "Only the report creator or civic staff may request official bot broadcast escalation",
+            403,
+            "broadcast_unauthorized",
+        )
+
+    # Severity gate: official civic bot escalation is reserved for high and critical civic hazards
+    severity = (report.get("severity") or "").lower()
+    if severity not in ("high", "critical"):
+        raise ApiError(
+            "Official civic bot escalation is reserved for high and critical severity hazards",
+            422,
+            "ineligible_severity_for_broadcast",
+        )
+
+    settings = get_settings()
+    broadcast = await broadcast_service.create_broadcast_request(
+        session,
+        report=report,
+        requester_id=user.id,
+        network=payload.network,
+        tone=payload.tone,
+        idempotency_key=payload.idempotency_key,
+        settings=settings,
+        request=request,
+    )
+
+    if broadcast.status == "queued":
+        if settings.celery_enabled:
+            try:
+                from tk_api.worker import celery_app as worker_app
+
+                worker_app.send_task("tk_worker.social_broadcast", args=[str(broadcast.id)])
+                return _format_broadcast_response(broadcast, report["ticket_no"])
+            except Exception:
+                logger.warning("celery enqueue failed; falling back to in-process broadcast")
+
+        broadcast = await broadcast_service.execute_broadcast(
+            session, broadcast_id=broadcast.id, settings=settings
+        )
+
+    return _format_broadcast_response(broadcast, report["ticket_no"])
+
+
+def _format_broadcast_response(broadcast: SocialBroadcast, ticket_no: str) -> dict[str, Any]:
+    status_msgs = {
+        "published": f"Official civic bot broadcast published for report #{ticket_no}.",
+        "simulated": (
+            f"Broadcast intent recorded for report #{ticket_no} "
+            "(simulated: civic bot background worker pipeline pending)."
+        ),
+        "queued": f"Broadcast task queued for report #{ticket_no}.",
+        "processing": f"Broadcast is being processed for report #{ticket_no}.",
+        "failed": f"Broadcast failed: {broadcast.last_error or 'Unknown error'}",
+        "retry_wait": (
+            f"Broadcast failed temporarily; retry scheduled (attempt {broadcast.attempts})."
+        ),
+        "outcome_unknown": (
+            f"Broadcast status for report #{ticket_no} is uncertain due to a network timeout; "
+            "queued for operator verification."
+        ),
+        "disabled": "Civic bot social broadcasting is currently disabled by configuration.",
+        "not_configured": "Civic bot social broadcasting credentials are not configured.",
+    }
+    return {
+        "id": str(broadcast.id),
+        "status": broadcast.status,
+        "report_id": str(broadcast.report_id),
+        "ticket_no": ticket_no,
+        "message": status_msgs.get(broadcast.status, f"Broadcast status: {broadcast.status}"),
+        "published_url": broadcast.published_url,
+        "external_post_id": broadcast.external_post_id,
+        "attempts": broadcast.attempts,
+        "created_at": broadcast.created_at.isoformat() if broadcast.created_at else None,
+        "updated_at": broadcast.updated_at.isoformat() if broadcast.updated_at else None,
+    }
+
+
+@reports_router.get(
+    "/{report_id}/social-broadcast",
+    response_model=SocialBroadcastResponse,
+    summary="Get latest civic bot social broadcast status for a report",
+)
+async def get_social_broadcast_status(
+    request: Request,
+    report_id: str,
+    session: DbSession,
+    user: ReporterUser,
+) -> Any:
+    await rate_limit(
+        request,
+        bucket="social_broadcast_read",
+        key=f"user:{user.id}",
+        limit=60,
+        window_seconds=60,
+    )
+    parsed = _parse_id(report_id, kind="report", error_kind="invalid_report_id")
+    report = await reports_service.get_report(session, parsed, viewer=user)
+    if report.get("visibility") != "public":
+        raise ApiError(
+            "Private reports cannot be inspected for social broadcast",
+            403,
+            "private_report_amplification_forbidden",
+        )
+    if report.get("status") == "draft":
+        raise ApiError(
+            "Draft reports cannot be inspected for social broadcast",
+            400,
+            "draft_cannot_be_amplified",
+        )
+
+    # Authorization gate: only report creator or civic staff may inspect bot broadcast status
+    is_reporter = str(report.get("reporter_id")) == str(user.id)
+    role_codes = set(user.role_codes()) if hasattr(user, "role_codes") else set()
+    staff_roles = {"admin", "super_admin", "moderator", "authority", "platform_admin"}
+    is_staff = bool(role_codes.intersection(staff_roles))
+    if not (is_reporter or is_staff):
+        raise ApiError(
+            "Only the report creator or civic staff may inspect broadcast status",
+            403,
+            "broadcast_unauthorized",
+        )
+
+    broadcast = await broadcast_service.get_latest_broadcast_for_report(session, parsed)
+    if not broadcast:
+        raise ApiError("No broadcast found for this report", 404, "broadcast_not_found")
+    return _format_broadcast_response(broadcast, report["ticket_no"])

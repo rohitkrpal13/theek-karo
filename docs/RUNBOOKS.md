@@ -68,9 +68,16 @@
 3. **Notify** (draft): Data Protection Board + affected principals within 72h;
    fields: nature, timing, extent, mitigation, contact. Template lives in the
    incident folder (created on first use).
-4. **Post-incident**: root-cause entry, checklist re-run, counsel review (COMPLIANCE-DPDP.md).
+## S2-SocialBroadcastFailure
+1. Inspect Redis DLQ: `docker compose exec redis redis-cli LRANGE tk:dlq 0 10`.
+2. Inspect broadcast status: `SELECT status, count(*) FROM social_broadcasts GROUP BY status;`.
+3. Check worker logs: `docker compose logs worker | grep social_broadcast`.
+4. If Twitter API rate limit or outage: verify credentials and usage quotas.
+5. Kill switch: set `TK_SOCIAL_BROADCAST_MODE=disabled` and restart worker + api.
+6. Full operations guide: see `docs/runbooks/social-broadcast-worker.md`.
 
 ## S3-LatencyBreach (TkApiP95LatencySLO)
+
 1. Dashboards: p95 by route group — identify hot group (usually reports/gis bulk reads).
 2. Check `EXPLAIN ANALYZE` on the hot query; confirm index usage (reports category/status,
    GIST geography).

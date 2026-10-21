@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 
 from tk_api.api.deps import CurrentUser, DbSession
@@ -34,6 +34,7 @@ from tk_api.cases.schemas import (
     SlaPauseRequest,
 )
 from tk_api.core.errors import ApiError, ForbiddenError, NotFoundError
+from tk_api.core.events import broadcast_live_event
 from tk_api.departments import service as departments_service
 
 cases_router = APIRouter(prefix="/api/v1/cases", tags=["cases"])
@@ -103,6 +104,7 @@ async def create_case(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCasesCreate,
+    request: Request,
 ) -> dict[str, Any]:
     from tk_api.reports.models import Report
 
@@ -120,6 +122,21 @@ async def create_case(
         priority=body.priority,
     )
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "case.created",
+        {
+            "id": str(case.id),
+            "case_no": case.case_no,
+            "report_id": str(case.report_id),
+            "department_id": (
+                str(case.primary_department_id) if case.primary_department_id else None
+            ),
+            "status": case.status,
+            "severity": case.severity,
+            "created_at": case.created_at.isoformat() if case.created_at else None,
+        },
+    )
     return cases_service._case_payload(case, include_internal=True)
 
 
@@ -300,6 +317,7 @@ async def transition(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCasesTransition,
+    request: Request,
 ) -> dict[str, Any]:
     case = await _resolve_case(session, case_id)
     await _require_case_scope(session, user, case)
@@ -307,6 +325,16 @@ async def transition(
         session, case, to_status=body.to_status, reason=body.reason, actor=user
     )
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "case.transitioned",
+        {
+            "id": str(case.id),
+            "case_no": case.case_no,
+            "status": case.status,
+            "severity": case.severity,
+        },
+    )
     return {"id": str(case.id), "status": case.status}
 
 
@@ -317,6 +345,7 @@ async def assign(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCasesAssign,
+    request: Request,
 ) -> dict[str, Any]:
     case = await _resolve_case(session, case_id)
     await _require_case_scope(session, user, case)
@@ -330,6 +359,15 @@ async def assign(
         geography_id=body.geography_id,
     )
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "case.assigned",
+        {
+            "id": str(case.id),
+            "case_no": case.case_no,
+            "department_id": str(case.primary_department_id),
+        },
+    )
     return {"id": str(case.id), "primary_department_id": str(case.primary_department_id)}
 
 
@@ -345,6 +383,7 @@ async def respond(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCasesRespond,
+    request: Request,
 ) -> dict[str, Any]:
     case = await _resolve_case(session, case_id)
     await _require_case_scope(session, user, case)
@@ -357,6 +396,16 @@ async def respond(
         actor=user,
     )
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "case.responded",
+        {
+            "id": str(case.id),
+            "case_no": case.case_no,
+            "response_id": str(row.id),
+            "kind": body.kind,
+        },
+    )
     return {"id": str(row.id), "created_at": row.created_at}
 
 
@@ -528,6 +577,7 @@ async def escalate_case(
     session: DbSession,
     user: CurrentUser,
     _perm: DepCasesEscalate,
+    request: Request,
 ) -> dict[str, Any]:
     case = await _resolve_case(session, case_id)
     await _require_case_scope(session, user, case)
@@ -541,4 +591,9 @@ async def escalate_case(
         threshold_type="manual",
     )
     await session.commit()
+    await broadcast_live_event(
+        request,
+        "case.escalated",
+        {"id": str(case.id), "case_no": case.case_no, "level": body.level, "reason": body.reason},
+    )
     return {"id": str(row.id) if row else None, "level": body.level}

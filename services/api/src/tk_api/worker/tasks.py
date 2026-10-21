@@ -222,10 +222,11 @@ def purge_expired_pii() -> dict[str, Any]:
     return {"purged": counts}
 
 
-async def _recover_stuck_media(settings: Settings) -> dict[str, int]:
-    """Re-drive media stuck in ``pending_scan`` (worker lost/crashed)."""
+async def _recover_stuck_jobs(settings: Settings) -> dict[str, Any]:
+    """Re-drive media stuck in ``pending_scan`` and social broadcasts stuck in ``processing``."""
     from tk_api.media import service as media_service
     from tk_api.media.storage import build_storage
+    from tk_api.reports.broadcast_service import recover_stuck_broadcasts
 
     engine = _engine(settings)
     try:
@@ -236,9 +237,12 @@ async def _recover_stuck_media(settings: Settings) -> dict[str, int]:
                 settings=settings,
                 storage=build_storage(settings),
             )
+            replayed_broadcasts = await recover_stuck_broadcasts(session, settings=settings)
         result: dict[str, Any] = {
             "recovered": len(replayed),
             "media_ids": [str(m) for m in replayed],
+            "recovered_broadcasts": len(replayed_broadcasts),
+            "broadcast_ids": [str(b) for b in replayed_broadcasts],
         }
         return result
     finally:
@@ -247,8 +251,8 @@ async def _recover_stuck_media(settings: Settings) -> dict[str, int]:
 
 @celery_app.task(name="tk_worker.recover_stuck_jobs", base=DurableTask)
 def recover_stuck_jobs() -> dict[str, Any]:
-    """Beat loop (every 5 min): re-drive stuck media scans (Step 11)."""
-    return asyncio.run(_recover_stuck_media(_settings()))
+    """Beat loop (every 5 min): re-drive stuck media scans and stranded broadcasts."""
+    return asyncio.run(_recover_stuck_jobs(_settings()))
 
 
 async def _govdata_import(settings: Settings, job_id: uuid.UUID) -> dict[str, Any]:
@@ -404,3 +408,31 @@ async def _generate_intelligence_report(settings: Settings, report_id: uuid.UUID
 def generate_intelligence_report(report_id: str) -> dict[str, Any]:
     """Render an intelligence report (JSON/CSV) into the exports bucket."""
     return asyncio.run(_generate_intelligence_report(_settings(), uuid.UUID(report_id)))
+
+
+async def _social_broadcast(settings: Settings, broadcast_id: uuid.UUID) -> dict[str, Any]:
+    from tk_api.reports.broadcast_service import execute_broadcast
+
+    engine = _engine(settings)
+    try:
+        factory = create_session_factory(engine)
+        async with factory() as session:
+            broadcast = await execute_broadcast(
+                session, broadcast_id=broadcast_id, settings=settings
+            )
+            return {
+                "broadcast_id": str(broadcast.id),
+                "status": broadcast.status,
+                "external_post_id": broadcast.external_post_id,
+                "published_url": broadcast.published_url,
+                "attempts": broadcast.attempts,
+                "error": broadcast.last_error,
+            }
+    finally:
+        await engine.dispose()
+
+
+@celery_app.task(name="tk_worker.social_broadcast", base=DurableTask)
+def social_broadcast(broadcast_id: str) -> dict[str, Any]:
+    """Execute social amplification broadcast for an approved report."""
+    return asyncio.run(_social_broadcast(_settings(), uuid.UUID(broadcast_id)))

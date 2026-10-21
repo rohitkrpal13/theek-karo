@@ -13,12 +13,14 @@ import type {
   MapReportItem,
   MapSummary,
 } from "@/lib/types"
+import { useT } from "@/lib/i18n-client"
 
 export default function MapPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const params = useParams<{ locale?: string }>()
   const locale = params.locale ?? "en"
+  const t = useT()
   const [, startTransition] = useTransition()
 
   // URL state parameters
@@ -34,6 +36,8 @@ export default function MapPage() {
   const [zoom, setZoom] = useState(initialZoom)
   const [entities, setEntities] = useState<MapEntity[]>([])
   const [loading, setLoading] = useState(true)
+  const [mapError, setMapError] = useState(false)
+  const [reloadVersion, setReloadVersion] = useState(0)
   const [selectedEntity, setSelectedEntity] = useState<MapEntity | null>(null)
 
   // Layers & Heatmap
@@ -105,8 +109,11 @@ export default function MapPage() {
 
   // Fetch institutions and reports for current viewport
   useEffect(() => {
+    let cancelled = false
+
     async function loadViewportData() {
       setLoading(true)
+      setMapError(false)
       const span = Math.max(0.05, 40 / Math.pow(2, zoom - 5))
       const minLon = center[0] - span / 2
       const maxLon = center[0] + span / 2
@@ -166,12 +173,15 @@ export default function MapPage() {
           })),
         ]
 
-        setEntities(mapItems)
+        if (!cancelled) setEntities(mapItems)
       } catch (err) {
         console.warn("Failed to load map entities", err)
-        setEntities([])
+        if (!cancelled) {
+          setEntities([])
+          setMapError(true)
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
 
@@ -179,8 +189,11 @@ export default function MapPage() {
       void loadViewportData()
     }, 300)
 
-    return () => clearTimeout(timer)
-  }, [center, zoom, activeLayers, selectedCategory, selectedStatus, selectedInstType])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [center, zoom, activeLayers, selectedCategory, selectedStatus, selectedInstType, reloadVersion])
 
   // Sync state with URL params
   function updateUrl(newCenter: [number, number], newZoom: number) {
@@ -454,6 +467,18 @@ export default function MapPage() {
       {/* Main Interactive Map Component */}
       {loading && entities.length === 0 ? (
         <Skeleton height={420} />
+      ) : mapError ? (
+        <div role="alert" className="rounded-(--radius-lg) border border-(--color-error)/30 bg-(--color-error)/5 p-8 text-center">
+          <p className="text-sm text-(--color-ink)">{t("map.load_error")}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-4"
+            onClick={() => setReloadVersion((version) => version + 1)}
+          >
+            {t("common.retry")}
+          </Button>
+        </div>
       ) : (
         <MapExplore
           entities={entities}

@@ -1,4 +1,4 @@
-import { api, type RequestOptions } from "@/lib/api"
+import { api, getToken, type RequestOptions } from "@/lib/api"
 import type {
   AiIntakeSuggestRequest,
   AiIntakeSuggestResponse,
@@ -14,6 +14,9 @@ import type {
   ReportSeverity,
   ReportStatus,
   ReportVisibility,
+  SocialBroadcastResponse,
+  SocialPostResponse,
+  SocialPostTone,
   TimelineEntry,
   UploadSlotResponse,
   Verification,
@@ -161,6 +164,32 @@ export const reportsApi = {
   ): Promise<UploadSlotResponse> =>
     api.post<UploadSlotResponse>(`/reports/${reportId}/media/upload-url`, payload, options),
 
+  uploadEvidenceBytes: async (
+    mediaId: string,
+    file: File,
+    presignedUrl: string | null,
+  ): Promise<void> => {
+    const token = getToken()
+    if (!presignedUrl && !token) {
+      throw new Error("Sign in again before uploading evidence.")
+    }
+    const headers: Record<string, string> = { "Content-Type": file.type }
+    if (!presignedUrl && token) headers.Authorization = `Bearer ${token}`
+
+    let response: Response
+    try {
+      response = await fetch(
+        presignedUrl ?? `/api/v1/media/uploads/${mediaId}/object`,
+        { method: "PUT", headers, body: file },
+      )
+    } catch {
+      throw new Error(`Could not upload ${file.name}. Check your connection and retry.`)
+    }
+    if (!response.ok) {
+      throw new Error(`Could not upload ${file.name} (HTTP ${response.status}).`)
+    }
+  },
+
   completeUpload: (
     reportId: string,
     payload: { media_id: string; checksum_sha256?: string },
@@ -255,4 +284,41 @@ export const reportsApi = {
 
   getAnalysis: (id: string, options?: RequestOptions): Promise<Analysis> =>
     api.get<Analysis>(`/reports/${id}/analysis`, options),
+
+  getSocialPost: (
+    id: string,
+    tone: SocialPostTone = "urgent",
+    options?: RequestOptions,
+  ): Promise<SocialPostResponse> =>
+    api.get<SocialPostResponse>(`/reports/${id}/social-post?tone=${tone}`, options),
+
+  broadcastSocialPost: (
+    id: string,
+    payload: {
+      network?: "x" | "all"
+      tone?: SocialPostTone
+      idempotency_key?: string
+      note?: string
+    } = { network: "x" },
+    options?: RequestOptions,
+  ): Promise<SocialBroadcastResponse> =>
+    api.post<SocialBroadcastResponse>(`/reports/${id}/social-broadcast`, payload, options),
+
+  getSocialBroadcastStatus: (
+    id: string,
+    options?: RequestOptions,
+  ): Promise<SocialBroadcastResponse | null> =>
+    api
+      .get<SocialBroadcastResponse>(`/reports/${id}/social-broadcast`, options)
+      .catch((err: unknown) => {
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "status" in err &&
+          (err as { status: number }).status === 404
+        ) {
+          return null
+        }
+        throw err
+      }),
 }

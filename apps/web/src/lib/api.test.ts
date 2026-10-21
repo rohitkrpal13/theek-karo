@@ -47,6 +47,27 @@ describe("api client utilities", () => {
     expect(res).toEqual(mockData)
   })
 
+  it("does not deduplicate GET requests with different query parameters", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+    fetchMock.mockImplementation(
+      async (input) =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({ url: String(input) }),
+        }) as Response,
+    )
+
+    const [schools, hospitals] = await Promise.all([
+      api.get<{ url: string }>("/institutions", { params: { q: "school" } }),
+      api.get<{ url: string }>("/institutions", { params: { q: "hospital" } }),
+    ])
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(schools.url).toContain("q=school")
+    expect(hospitals.url).toContain("q=hospital")
+  })
+
   it("handles 204 No Content safely", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
       ok: true,

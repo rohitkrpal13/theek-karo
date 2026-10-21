@@ -2710,6 +2710,108 @@
         }
       }
     },
+    "/api/v1/reports/bulk": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Bulk create reports (transactional, idempotent)",
+        "description": "Accepts `{ items: [{title, description, category_id, ...}, ...], idempotency_key?: string }`.\n\nValidates each item via `Report` schemas; all-or-nothing 422 on first\ninvalid. Requires auth; limited to 25 items/request (DoS guard).",
+        "operationId": "bulk_create_api_v1_reports_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/stream": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "NDJSON streaming of reports (cursor)",
+        "description": "Streams reports as NDJSON (`application/x-ndjson`) with heartbeat.\n\nUseful for large exports without loading all rows into memory. Client\nreads line-delimited JSON; `event: done` signals completion.",
+        "operationId": "stream_reports_api_v1_reports_stream_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports/drafts": {
       "get": {
         "tags": [
@@ -4099,6 +4201,155 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Refresh Analysis Api V1 Reports  Report Id  Analysis Refresh Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{report_id}/social-post": {
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get optimized social media posts for X and Instagram with authority tags",
+        "operationId": "get_social_post_api_v1_reports__report_id__social_post_get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          },
+          {
+            "name": "tone",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "urgent",
+                "nudge",
+                "accountability"
+              ],
+              "type": "string",
+              "default": "urgent",
+              "title": "Tone"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocialPostResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/{report_id}/social-broadcast": {
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Broadcast verified report via official Theek Karo civic bot",
+        "operationId": "broadcast_social_post_api_v1_reports__report_id__social_broadcast_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialBroadcastRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocialBroadcastResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "Get latest civic bot social broadcast status for a report",
+        "operationId": "get_social_broadcast_status_api_v1_reports__report_id__social_broadcast_get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocialBroadcastResponse"
                 }
               }
             }
@@ -10915,6 +11166,138 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/stream": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "SSE live stream (heartbeat + report events)",
+        "description": "EventSource stream: `report.created`, `heartbeat`. 30s keepalive.\n\nWhen Redis is available, events are broadcast via pubsub (`tk:live`).\nOtherwise, periodic heartbeat only \u2014 never fails.",
+        "operationId": "live_stream_api_v1_live_stream_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/activity": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "Live activity feed (polling-optimized)",
+        "description": "Lightweight feed for polling (12s). Returns `items` + `next_cursor`.",
+        "operationId": "live_activity_api_v1_live_activity_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/stats": {
+      "get": {
+        "tags": [
+          "realtime"
+        ],
+        "summary": "Real-time operational pulse stats",
+        "description": "Real-time civic pulse metrics for live feeds and telemetry indicators.",
+        "operationId": "live_stats_api_v1_live_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -20833,6 +21216,53 @@
                   "additionalProperties": true,
                   "type": "object",
                   "title": "Response Bulk Assign Api V1 Government Bulk Assign Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/communication/public-alerts": {
+      "get": {
+        "tags": [
+          "communication"
+        ],
+        "summary": "List verified published alerts",
+        "operationId": "list_published_alerts_api_v1_communication_public_alerts_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 10,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Published Alerts Api V1 Communication Public Alerts Get"
                 }
               }
             }
@@ -36836,6 +37266,439 @@
           "reason"
         ],
         "title": "SlaPauseRequest"
+      },
+      "SocialAuthorityTag": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "x_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Handle"
+          },
+          "instagram_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instagram Handle"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "title": "Jurisdiction"
+          },
+          "is_primary": {
+            "type": "boolean",
+            "title": "Is Primary",
+            "default": true
+          },
+          "verification_status": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "verified_official"
+            ],
+            "title": "Verification Status",
+            "default": "unverified"
+          },
+          "official_verification_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Official Verification Source"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
+          },
+          "last_verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Verified At"
+          },
+          "next_review_due": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review Due"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "jurisdiction"
+        ],
+        "title": "SocialAuthorityTag"
+      },
+      "SocialBroadcastRequest": {
+        "properties": {
+          "network": {
+            "type": "string",
+            "enum": [
+              "x",
+              "all"
+            ],
+            "title": "Network",
+            "default": "x"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "urgent",
+              "nudge",
+              "accountability"
+            ],
+            "title": "Tone",
+            "default": "urgent"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "SocialBroadcastRequest"
+      },
+      "SocialBroadcastResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "simulated",
+              "queued",
+              "processing",
+              "published",
+              "failed",
+              "retry_wait",
+              "outcome_unknown",
+              "disabled",
+              "not_configured"
+            ],
+            "title": "Status"
+          },
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "ticket_no": {
+            "type": "string",
+            "title": "Ticket No"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "published_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Url"
+          },
+          "external_post_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Post Id"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts",
+            "default": 0
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "report_id",
+          "ticket_no",
+          "message"
+        ],
+        "title": "SocialBroadcastResponse"
+      },
+      "SocialInstagramPost": {
+        "properties": {
+          "caption": {
+            "type": "string",
+            "title": "Caption"
+          },
+          "handles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Handles"
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caption"
+        ],
+        "title": "SocialInstagramPost"
+      },
+      "SocialPostResponse": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "ticket_no": {
+            "type": "string",
+            "title": "Ticket No"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "urgent",
+              "nudge",
+              "accountability"
+            ],
+            "title": "Tone"
+          },
+          "x_post": {
+            "$ref": "#/components/schemas/SocialXPost"
+          },
+          "instagram_post": {
+            "$ref": "#/components/schemas/SocialInstagramPost"
+          },
+          "authorities": {
+            "items": {
+              "$ref": "#/components/schemas/SocialAuthorityTag"
+            },
+            "type": "array",
+            "title": "Authorities"
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "report_url": {
+            "type": "string",
+            "title": "Report Url"
+          },
+          "story_card": {
+            "$ref": "#/components/schemas/SocialStoryCardData"
+          },
+          "official_broadcast_eligible": {
+            "type": "boolean",
+            "title": "Official Broadcast Eligible",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "ticket_no",
+          "tone",
+          "x_post",
+          "instagram_post",
+          "report_url",
+          "story_card"
+        ],
+        "title": "SocialPostResponse"
+      },
+      "SocialStoryCardData": {
+        "properties": {
+          "ticket_no": {
+            "type": "string",
+            "title": "Ticket No"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "address": {
+            "type": "string",
+            "title": "Address"
+          },
+          "city": {
+            "type": "string",
+            "title": "City"
+          },
+          "primary_authority_name": {
+            "type": "string",
+            "title": "Primary Authority Name"
+          },
+          "primary_authority_handle": {
+            "type": "string",
+            "title": "Primary Authority Handle"
+          },
+          "report_url": {
+            "type": "string",
+            "title": "Report Url"
+          },
+          "primary_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Image Url"
+          },
+          "trust_tier": {
+            "type": "string",
+            "title": "Trust Tier",
+            "default": "COMMUNITY_VERIFIED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ticket_no",
+          "title",
+          "category",
+          "severity",
+          "address",
+          "city",
+          "primary_authority_name",
+          "primary_authority_handle",
+          "report_url"
+        ],
+        "title": "SocialStoryCardData"
+      },
+      "SocialXPost": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "intent_url": {
+            "type": "string",
+            "title": "Intent Url"
+          },
+          "handles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Handles"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          },
+          "fits_single_tweet": {
+            "type": "boolean",
+            "title": "Fits Single Tweet",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "intent_url",
+          "char_count"
+        ],
+        "title": "SocialXPost"
       },
       "TaskAssignBody": {
         "properties": {

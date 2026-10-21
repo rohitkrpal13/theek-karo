@@ -7,14 +7,17 @@ Handlers must never leak stack traces or internals (SECURITY.md §4).
 
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Callable
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.types import ExceptionHandler
+
+# Starlette's ExceptionHandler was removed in recent versions; use a compatible alias.
+ExceptionHandler = Callable[..., Any]  # type: ignore[no-redef]
 
 _PROBLEM_BASE = "https://api.theekkar.in/errors"
 

@@ -168,7 +168,7 @@ def test_ai_review_pipeline_on_postgres() -> None:
         log_level="WARNING",
         database_url=DB_URL,
         rate_limit_mode="memory",
-        jwt_secret="test-secret-not-for-prod",
+        jwt_secret="test-secret-not-for-production-2026",
         ai_auto_analysis=False,
     )
     app = create_app(settings=settings)

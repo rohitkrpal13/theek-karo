@@ -91,10 +91,9 @@ export interface InstitutionType {
   id: string
   code: string
   name_key: string
-  category_id: string | null
-  default_schema: Record<string, unknown>
-  description: string | null
+  attribute_schema: Record<string, unknown>
   is_active: boolean
+  created_at: string
 }
 
 export interface InstitutionAttributeDef {
@@ -135,20 +134,28 @@ export interface InstitutionTranslation {
 
 export interface Institution {
   id: string
-  type_id: string
-  official_id: string | null
+  institution_type_id: string
   name: string
-  slug: string
-  description: string | null
+  normalized_name: string
+  official_identifier: string | null
+  address: string | null
   geography_id: string | null
+  contact_phone?: string | null
+  contact_email?: string | null
+  website?: string | null
+  management_type?: string | null
+  description?: string | null
   location_geojson?: GeoJsonPoint | null
   location_lat?: number | null
   location_lon?: number | null
-  operational_status: "operational" | "closed" | "under_construction" | "relocated"
-  verification_state: "unverified" | "official" | "community_verified"
-  confidence_score: number
-  source_id: string | null
-  is_active: boolean
+  operational_status: string
+  verification_state: string
+  confidence_score?: number | null
+  source_id?: string | null
+  type_id?: string
+  official_id?: string | null
+  slug?: string
+  is_active?: boolean
   created_at: string
   updated_at: string
 }
@@ -785,10 +792,9 @@ export interface ReportEvidence {
 
 export interface UploadSlotResponse {
   media_id: string
-  object_key: string
-  upload_url: string | null
-  headers: Record<string, string>
-  expires_in_seconds: number
+  upload_method: "api" | "presigned"
+  presigned_url: string | null
+  expires_in: number
 }
 
 export interface DuplicateCandidate {
@@ -974,4 +980,84 @@ export interface MapNearbyResponse {
     distance_m: number
   }>
   total_count: number
+}
+
+export type SocialPostTone = "urgent" | "nudge" | "accountability"
+
+export interface SocialAuthorityTag {
+  name: string
+  x_handle: string | null
+  instagram_handle: string | null
+  jurisdiction: string
+  is_primary: boolean
+  verification_status: "unverified" | "verified_official"
+  official_verification_source?: string | null
+  verified_by?: string | null
+  last_verified_at?: string | null
+  next_review_due?: string | null
+}
+
+export interface SocialStoryCardData {
+  ticket_no: string
+  title: string
+  category: string
+  severity: string
+  address: string
+  city: string
+  primary_authority_name: string
+  primary_authority_handle: string
+  report_url: string
+  primary_image_url: string | null
+  trust_tier: string
+}
+
+export interface SocialXPost {
+  text: string
+  intent_url: string
+  handles: string[]
+  char_count: number
+  fits_single_tweet: boolean
+}
+
+export interface SocialInstagramPost {
+  caption: string
+  handles: string[]
+  hashtags: string[]
+}
+
+export interface SocialPostResponse {
+  report_id: string
+  ticket_no: string
+  tone: SocialPostTone
+  x_post: SocialXPost
+  instagram_post: SocialInstagramPost
+  authorities: SocialAuthorityTag[]
+  hashtags: string[]
+  report_url: string
+  story_card: SocialStoryCardData
+  official_broadcast_eligible: boolean
+}
+
+export type SocialBroadcastStatus =
+  | "simulated"
+  | "queued"
+  | "processing"
+  | "published"
+  | "failed"
+  | "retry_wait"
+  | "outcome_unknown"
+  | "disabled"
+  | "not_configured"
+
+export interface SocialBroadcastResponse {
+  id?: string
+  status: SocialBroadcastStatus
+  report_id: string
+  ticket_no: string
+  message: string
+  published_url: string | null
+  external_post_id?: string | null
+  attempts?: number
+  created_at?: string | null
+  updated_at?: string | null
 }

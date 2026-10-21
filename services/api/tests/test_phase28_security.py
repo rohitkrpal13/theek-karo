@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,6 +29,7 @@ from tests.conftest import (
     _register_and_verify,
 )
 from tk_api.core.db import create_session_factory
+from tk_api.security.middleware import RequestSizeLimitMiddleware
 from tk_api.users.models import Role, User, UserRole
 
 
@@ -40,7 +42,7 @@ def settings() -> Settings:
         database_url="sqlite+aiosqlite://",
         rate_limit_mode="memory",
         otp_channel="console",
-        jwt_secret="test-secret-not-for-prod",
+        jwt_secret="test-secret-not-for-production-2026",
     )
 
 
@@ -55,7 +57,7 @@ def client():
             database_url="sqlite+aiosqlite://",
             rate_limit_mode="memory",
             otp_channel="console",
-            jwt_secret="test-secret-not-for-prod",
+            jwt_secret="test-secret-not-for-production-2026",
         )
     )
     sender = RecordingSender()
@@ -114,6 +116,82 @@ def _auth_header(client: TestClient, user_id: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Security Incidents
 # ---------------------------------------------------------------------------
+
+
+def test_request_body_limit_uses_application_setting(client: TestClient) -> None:
+    client.app.state.settings.max_request_body_bytes = 32
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"contact": "x" * 40, "password": "test"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["type"].endswith("/payload_too_large")
+    assert "32 bytes" in response.json()["detail"]
+
+
+def test_request_body_limit_checks_streamed_body_without_content_length() -> None:
+    async def send_stream(body_chunks: list[bytes], limit: int) -> tuple[int, bytes]:
+        incoming = iter(
+            [
+                {
+                    "type": "http.request",
+                    "body": chunk,
+                    "more_body": index < len(body_chunks) - 1,
+                }
+                for index, chunk in enumerate(body_chunks)
+            ]
+        )
+        response_messages: list[dict[str, object]] = []
+        received_body = bytearray()
+
+        async def receive() -> dict[str, object]:
+            return next(incoming)
+
+        async def app(scope, app_receive, app_send) -> None:
+            while True:
+                message = await app_receive()
+                received_body.extend(message.get("body", b""))
+                if not message.get("more_body", False):
+                    break
+            await app_send({"type": "http.response.start", "status": 200, "headers": []})
+            await app_send({"type": "http.response.body", "body": b"ok"})
+
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/upload",
+            "headers": [(b"content-type", b"application/json")],
+            "query_string": b"",
+            "server": ("test", 80),
+            "client": ("127.0.0.1", 1234),
+            "scheme": "http",
+            "http_version": "1.1",
+            "app": SimpleNamespace(
+                state=SimpleNamespace(settings=SimpleNamespace(max_request_body_bytes=limit))
+            ),
+        }
+
+        async def capture(message: dict[str, object]) -> None:
+            response_messages.append(message)
+
+        middleware = RequestSizeLimitMiddleware(app)
+        await middleware(scope, receive, capture)
+        status = next(
+            message["status"]
+            for message in response_messages
+            if message["type"] == "http.response.start"
+        )
+        return int(status), bytes(received_body)
+
+    status, received = asyncio.run(send_stream([b'{"value":', b'"small"}'], 32))
+    assert status == 200
+    assert received == b'{"value":"small"}'
+
+    status, received = asyncio.run(send_stream([b"x" * 20, b"y" * 20], 32))
+    assert status == 413
+    assert received == b""
 
 
 class TestSecurityIncidents:

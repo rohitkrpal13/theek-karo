@@ -15,6 +15,7 @@ from typing import ClassVar
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger("tk_api.security.middleware")
 
@@ -53,7 +54,7 @@ class EnhancedSecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+class RequestSizeLimitMiddleware:
     """Enforce request body size limits to prevent abuse."""
 
     # Default limits by content type
@@ -63,31 +64,83 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         "application/x-www-form-urlencoded": 524_288,  # 512KB
     }
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        content_type = request.headers.get("content-type", "")
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        # Skip for GET/DELETE without body
-        if request.method in ("GET", "DELETE", "HEAD", "OPTIONS"):
-            return await call_next(request)
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] in {
+            "GET",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+        }:
+            await self.app(scope, receive, send)
+            return
 
-        # Check content length
+        request = Request(scope, receive=receive)
+        content_type = request.headers.get("content-type", "").split(";", 1)[0]
+        settings = request.app.state.settings
+        limit = min(
+            settings.max_request_body_bytes,
+            self.DEFAULT_LIMITS.get(content_type, 1_048_576),
+        )
+
+        async def reject(status: int, kind: str, detail: str) -> None:
+            from tk_api.core.errors import problem_response
+
+            response = problem_response(status, kind=kind, detail=detail)
+            await response(scope, receive, send)
+
         content_length = request.headers.get("content-length")
-        if content_length:
+        if content_length is not None:
             try:
                 size = int(content_length)
-                limit = self.DEFAULT_LIMITS.get(content_type.split(";")[0], 1_048_576)
-                if size > limit:
-                    from tk_api.core.errors import problem_response
-
-                    return problem_response(
-                        413,
-                        kind="payload_too_large",
-                        detail=f"Request body exceeds maximum size of {limit} bytes",
-                    )
             except ValueError:
-                pass
+                await reject(400, "invalid_content_length", "Content-Length must be an integer")
+                return
+            if size < 0:
+                await reject(400, "invalid_content_length", "Content-Length cannot be negative")
+                return
+            if size > limit:
+                await reject(
+                    413,
+                    "payload_too_large",
+                    f"Request body exceeds maximum size of {limit} bytes",
+                )
+                return
+            await self.app(scope, receive, send)
+            return
 
-        return await call_next(request)
+        buffered: list[Message] = []
+        size = 0
+        while True:
+            message = await receive()
+            buffered.append(message)
+            if message["type"] == "http.disconnect":
+                break
+            if message["type"] == "http.request":
+                size += len(message.get("body", b""))
+                if size > limit:
+                    await reject(
+                        413,
+                        "payload_too_large",
+                        f"Request body exceeds maximum size of {limit} bytes",
+                    )
+                    return
+                if not message.get("more_body", False):
+                    break
+
+        replay_index = 0
+
+        async def replay_receive() -> Message:
+            nonlocal replay_index
+            if replay_index < len(buffered):
+                message = buffered[replay_index]
+                replay_index += 1
+                return message
+            return await receive()
+
+        await self.app(scope, replay_receive, send)
 
 
 class SSRFProtectionMiddleware(BaseHTTPMiddleware):

@@ -131,9 +131,15 @@ class TestCeleryDurabilityConfig:
             dispatch_due_notifications,
             process_media,
             recover_stuck_jobs,
+            social_broadcast,
         )
 
-        for task in (dispatch_due_notifications, process_media, recover_stuck_jobs):
+        for task in (
+            dispatch_due_notifications,
+            process_media,
+            recover_stuck_jobs,
+            social_broadcast,
+        ):
             assert task.max_retries == DurableTask.max_retries
             assert task.acks_late is True
 
@@ -155,3 +161,163 @@ class TestDeadLetterRecord:
 
     def test_dlq_key_constant(self) -> None:  # type: ignore[no-untyped-def]
         assert DLQ_LIST == "tk:dlq"
+
+
+class TestSocialBroadcastRecovery:
+    def test_lost_redis_task_recovered_from_postgres_without_duplicates(self, client) -> None:  # type: ignore[no-untyped-def]
+        import asyncio
+        from decimal import Decimal
+        from unittest.mock import patch
+
+        from tk_api.civic.models import Category
+        from tk_api.reports.broadcast_service import recover_stuck_broadcasts
+        from tk_api.reports.models import Report, SocialBroadcast
+
+        async def scenario() -> None:
+            factory = create_session_factory(client.app.state.engine)
+            async with factory() as session:
+                user = User(
+                    phone=f"98{uuid.uuid4().hex[:8]}",
+                    display_name="RecovUser",
+                    status="active",
+                )
+                session.add(user)
+                cat = Category(
+                    slug=f"cat_{uuid.uuid4().hex[:6]}",
+                    icon="alert",
+                    form_schema={"type": "object"},
+                    verification_policy={"policy": "threshold"},
+                    default_locale_keys={"name": "Drainage"},
+                )
+                session.add(cat)
+                await session.flush()
+
+                report = Report(
+                    ticket_no=f"TK-REC-{uuid.uuid4().hex[:4]}",
+                    title="Collapsed Manhole",
+                    description="Deep hazard on pedestrian walkway.",
+                    category_id=cat.id,
+                    severity="high",
+                    status="submitted",
+                    visibility="public",
+                    reporter_id=user.id,
+                    location={"type": "Point", "coordinates": [77.5946, 12.9716]},
+                    location_accuracy_m=Decimal("5.0"),
+                )
+                session.add(report)
+                await session.flush()
+
+                # Seed an orphaned queued broadcast older than 10 mins (lost broker task simulation)
+                ten_mins_ago = datetime.now(UTC) - timedelta(minutes=15)
+                b = SocialBroadcast(
+                    report_id=report.id,
+                    requested_by=user.id,
+                    network="x",
+                    tone="urgent",
+                    status="queued",
+                    post_text="Urgent hazard",
+                    attempts=0,
+                    max_attempts=3,
+                    created_at=ten_mins_ago,
+                    updated_at=ten_mins_ago,
+                )
+                session.add(b)
+                await session.commit()
+                await session.refresh(b)
+                b_id = b.id
+
+                # Run recovery sweep with mock Celery app
+                with patch("tk_api.worker.celery_app.send_task") as mock_send:
+                    recovered = await recover_stuck_broadcasts(
+                        session,
+                        settings=client.app.state.settings.model_copy(
+                            update={"celery_enabled": True}
+                        ),
+                        max_age_seconds=600,
+                    )
+                    assert b_id in recovered
+                    mock_send.assert_called_once_with(
+                        "tk_worker.social_broadcast", args=[str(b_id)]
+                    )
+
+                # Verify single updated row in PostgreSQL (no duplicate records)
+                reloaded = await session.get(SocialBroadcast, b_id)
+                assert reloaded is not None
+                assert reloaded.status == "queued"
+                assert "Recovered from stranded state" in str(reloaded.last_error)
+
+        asyncio.run(scenario())
+
+    def test_recovery_exhaustion_marks_failed(self, client) -> None:  # type: ignore[no-untyped-def]
+        import asyncio
+        from decimal import Decimal
+
+        from tk_api.civic.models import Category
+        from tk_api.reports.broadcast_service import recover_stuck_broadcasts
+        from tk_api.reports.models import Report, SocialBroadcast
+
+        async def scenario() -> None:
+            factory = create_session_factory(client.app.state.engine)
+            async with factory() as session:
+                user = User(
+                    phone=f"98{uuid.uuid4().hex[:8]}",
+                    display_name="ExhaustUser",
+                    status="active",
+                )
+                session.add(user)
+                cat = Category(
+                    slug=f"cat_{uuid.uuid4().hex[:6]}",
+                    icon="alert",
+                    form_schema={"type": "object"},
+                    verification_policy={"policy": "threshold"},
+                    default_locale_keys={"name": "Roads"},
+                )
+                session.add(cat)
+                await session.flush()
+
+                report = Report(
+                    ticket_no=f"TK-EXH-{uuid.uuid4().hex[:4]}",
+                    title="Exhausted Task Hazard",
+                    description="Deep hazard test.",
+                    category_id=cat.id,
+                    severity="critical",
+                    status="submitted",
+                    visibility="public",
+                    reporter_id=user.id,
+                    location={"type": "Point", "coordinates": [77.5946, 12.9716]},
+                    location_accuracy_m=Decimal("5.0"),
+                )
+                session.add(report)
+                await session.flush()
+
+                ten_mins_ago = datetime.now(UTC) - timedelta(minutes=15)
+                b = SocialBroadcast(
+                    report_id=report.id,
+                    requested_by=user.id,
+                    network="x",
+                    tone="urgent",
+                    status="queued",
+                    post_text="Urgent hazard",
+                    attempts=3,
+                    max_attempts=3,
+                    created_at=ten_mins_ago,
+                    updated_at=ten_mins_ago,
+                )
+                session.add(b)
+                await session.commit()
+                await session.refresh(b)
+                b_id = b.id
+
+                recovered = await recover_stuck_broadcasts(
+                    session,
+                    settings=client.app.state.settings,
+                    max_age_seconds=600,
+                )
+                assert b_id in recovered
+
+                reloaded = await session.get(SocialBroadcast, b_id)
+                assert reloaded is not None
+                assert reloaded.status == "failed"
+                assert "reached maximum attempts" in str(reloaded.last_error)
+
+        asyncio.run(scenario())

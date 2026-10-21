@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import math
 from collections.abc import Sequence
-from typing import TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class CursorParams(BaseModel):
     limit: int = Field(default=20, ge=1, le=100, description="Items to fetch (max 100)")
 
 
-class PageResponse[T](BaseModel):
+class PageResponse(BaseModel, Generic[T]):
     items: list[T]
     total: int
     page: int
@@ -52,7 +52,7 @@ class PageResponse[T](BaseModel):
         )
 
 
-class CursorResponse[T](BaseModel):
+class CursorResponse(BaseModel, Generic[T]):
     items: list[T]
     next_cursor: str | None = None
     limit: int

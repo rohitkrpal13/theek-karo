@@ -1,14 +1,21 @@
 # GO-LIVE CHECKLIST — Theek Karo
 
-**Version:** 1.0  
-**Date:** 2026-08-19  
+**Version:** 1.1
+
+**Date:** 2026-10-14
+
 **Status:** Pre-launch readiness assessment
+
+Repository checks are passing as recorded in
+[PRODUCTION-READINESS-AUDIT.md](./PRODUCTION-READINESS-AUDIT.md). The
+environment-dependent launch items below remain unchecked until verified in
+the actual staging/production accounts.
 
 ---
 
 ## Pre-Launch Criteria
 
-### Infrastructure ✅
+### Infrastructure
 - [ ] AWS account provisioned with appropriate limits
 - [ ] VPC, subnets, security groups configured
 - [ ] ECS Fargate cluster operational
@@ -20,7 +27,7 @@
 - [ ] ACM certificates issued
 - [ ] Route53 DNS configured
 
-### CI/CD ✅
+### CI/CD
 - [ ] GitHub Actions CI pipeline passing
 - [ ] Security scans passing (Trivy, Bandit, Semgrep, pip-audit)
 - [ ] Deploy pipeline tested on staging
@@ -28,15 +35,15 @@
 - [ ] ECR repositories created
 - [ ] Container images built and pushed
 
-### Database ✅
-- [ ] Migrations up to date (0040)
+### Database
+- [ ] Migrations up to date
 - [ ] Fresh database migration tested
 - [ ] Rollback migration tested
 - [ ] Backup configured (daily + PITR)
 - [ ] Multi-AZ enabled for prod
 - [ ] Connection pool tuned
 
-### Security ✅
+### Security
 - [ ] No hardcoded secrets in codebase
 - [ ] Secrets Manager configured
 - [ ] JWT secret >= 32 characters
@@ -47,7 +54,7 @@
 - [ ] Input validation active
 - [ ] SSRF protection active
 
-### Application ✅
+### Application
 - [ ] Health endpoints working (`/healthz`, `/readyz`)
 - [ ] Comprehensive health check working
 - [ ] Auth flow working (signup, login, logout)
@@ -60,14 +67,14 @@
 - [ ] Admin dashboard working
 - [ ] Government workflow working
 
-### Monitoring ✅
+### Monitoring
 - [ ] Prometheus scraping metrics
 - [ ] Grafana dashboards configured
 - [ ] Alert rules configured
 - [ ] Log aggregation working
 - [ ] Error tracking working
 
-### Documentation ✅
+### Documentation
 - [ ] API documentation (OpenAPI) up to date
 - [ ] Runbooks created
 - [ ] On-call process defined

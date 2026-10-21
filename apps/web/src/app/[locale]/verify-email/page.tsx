@@ -24,7 +24,8 @@ export default function VerifyEmailPage() {
     if (!verificationToken.trim()) return
     try {
       const res = await authApi.verifyEmail(verificationToken.trim())
-      login(res.access_token, res.user)
+      if (res.refresh_token) login(res.access_token, res.refresh_token, res.user)
+      else login(res.access_token, res.user)
       setSuccess(true)
       setTimeout(() => {
         router.push(`/${locale}/`)
@@ -43,7 +44,8 @@ export default function VerifyEmailPage() {
       try {
         const res = await authApi.verifyEmail(urlToken.trim())
         if (cancelled) return
-        login(res.access_token, res.user)
+        if (res.refresh_token) login(res.access_token, res.refresh_token, res.user)
+        else login(res.access_token, res.user)
         setSuccess(true)
         setTimeout(() => {
           router.push(`/${locale}/`)

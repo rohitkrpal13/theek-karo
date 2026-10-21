@@ -21,26 +21,27 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-database_url = get_settings().database_url
+database_url = config.attributes.get("database_url") or get_settings().database_url
 
 
 def run_migrations_offline() -> None:
-    import sqlalchemy as _sa  # noqa: WPS433
     context.configure(
         url=database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
-        version_table_column_type=_sa.String(length=128),
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection) -> None:  # type: ignore[no-untyped-def]
-    import sqlalchemy as _sa  # noqa: WPS433
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True, version_table_column_type=_sa.String(length=128))
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

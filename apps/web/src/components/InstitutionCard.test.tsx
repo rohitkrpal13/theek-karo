@@ -6,17 +6,15 @@ import type { Institution } from "@/lib/types"
 describe("InstitutionCard", () => {
   const mockInstitution: Institution = {
     id: "inst-123",
-    type_id: "type-school",
-    official_id: "SCH-PATNA-001",
+    institution_type_id: "type-school",
     name: "Patna Central Model School",
-    slug: "patna-central-model-school",
+    normalized_name: "patna central model school",
+    official_identifier: "SCH-PATNA-001",
+    address: "Patna district",
     description: "Senior secondary government school in Patna district.",
     geography_id: "geo-patna",
     operational_status: "operational",
     verification_state: "official",
-    confidence_score: 0.95,
-    source_id: "src-gov",
-    is_active: true,
     created_at: "2026-08-16T10:00:00Z",
     updated_at: "2026-08-16T10:00:00Z",
   }

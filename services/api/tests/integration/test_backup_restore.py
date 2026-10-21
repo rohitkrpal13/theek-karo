@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from tk_api.core.db import Base, create_session_factory, ping_database
@@ -30,6 +31,7 @@ ADMIN_URL = os.environ.get(
     "TK_TEST_DATABASE_URL",
     "postgresql+asyncpg://tk:tk_dev_password@127.0.0.1:5434/postgres",
 )
+ADMIN_DB_URL = make_url(ADMIN_URL)
 REPO_ROOT = Path(__file__).resolve().parents[4]  # services/api/tests/integration → repo root
 
 
@@ -60,6 +62,9 @@ def _pg_tool(tool: str) -> list[str] | None:
     local = shutil.which(tool)
     if local is not None:
         return [local]
+    test_container = os.environ.get("TK_TEST_POSTGRES_CONTAINER")
+    if test_container:
+        return ["docker", "exec", "-i", test_container, tool]
     compose_file = REPO_ROOT / "docker-compose.yml"
     if compose_file.exists() and shutil.which("docker") is not None:
         return ["docker", "compose", "-f", str(compose_file), "exec", "-T", "postgres", tool]
@@ -69,11 +74,19 @@ def _pg_tool(tool: str) -> list[str] | None:
 def _run_sql(tool: str, args: list[str], *, stdin: bytes | None = None) -> str:
     cmd = _pg_tool(tool)
     assert cmd is not None, f"{tool} not available (install postgres client or run compose)"
-    env = {**os.environ, "PGPASSWORD": "tk_dev_password"}
+    env = {**os.environ, "PGPASSWORD": ADMIN_DB_URL.password or ""}
     if cmd[0] == "docker":
-        args = ["-U", "tk", *args]
+        args = ["-U", ADMIN_DB_URL.username or "tk", *args]
     else:
-        args = ["-h", "127.0.0.1", "-p", "5434", "-U", "tk", *args]
+        args = [
+            "-h",
+            ADMIN_DB_URL.host or "127.0.0.1",
+            "-p",
+            str(ADMIN_DB_URL.port or 5432),
+            "-U",
+            ADMIN_DB_URL.username or "tk",
+            *args,
+        ]
     result = subprocess.run(
         [*cmd, *args],
         input=stdin,

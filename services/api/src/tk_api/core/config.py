@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Env = Literal["dev", "test", "staging", "prod"]
@@ -148,6 +149,18 @@ class Settings(BaseSettings):
     notification_max_attempts: int = 3
     notification_backoff_seconds: int = 300
 
+    # Civic Bot & Social Amplification (PRD §8, §14)
+    social_broadcast_mode: Literal["disabled", "simulated", "live"] = "simulated"
+    social_broadcast_max_attempts: int = 3
+    social_broadcast_retry_delay_seconds: int = 60
+    twitter_api_key: str | None = None
+    twitter_api_secret: str | None = None
+    twitter_access_token: str | None = None
+    twitter_access_token_secret: str | None = None
+    twitter_bearer_token: str | None = None
+    twitter_api_base_url: str = "https://api.x.com"
+    twitter_request_timeout_seconds: float = 10.0
+
     # Phase 15 community confirmation (PRD §B.2): thresholds for the
     # two-confirmer gate and the "issue still exists" reopen signal. Signals
     # are review triggers — they never auto-close or auto-reopen a case.
@@ -170,7 +183,7 @@ class Settings(BaseSettings):
 
     # API configuration
     api_v1_prefix: str = "/api/v1"
-    max_request_body_bytes: int = 10 * 1024 * 1024  # 10 MB
+    max_request_body_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # 10 MB
 
     @property
     def is_test(self) -> bool:

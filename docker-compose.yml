@@ -19,8 +19,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6380:6379"
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -60,6 +63,7 @@ services:
       TK_AI_AUTO_ANALYSIS: "true"
       TK_CELERY_ENABLED: "true"
       TK_CELERY_BROKER_URL: redis://redis:6379/1
+      TK_SOCIAL_BROADCAST_MODE: ${TK_SOCIAL_BROADCAST_MODE:-simulated}
     ports:
       - "8001:8000"
     depends_on:
@@ -83,7 +87,7 @@ services:
   worker:
     build:
       context: ./services/api
-    command: /app/.venv/bin/celery -A tk_api.worker:celery_app worker --beat -l info --pool=solo
+    command: /app/.venv/bin/celery -A tk_api.worker:celery_app worker -Q tk_jobs --beat -l info --pool=solo
     environment:
       TK_ENV: dev
       TK_LOG_LEVEL: INFO
@@ -96,6 +100,7 @@ services:
       TK_MEDIA_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-tk_minio_password}
       TK_MEDIA_MINIO_BUCKET: tk-media
       TK_AI_AUTO_ANALYSIS: "true"
+      TK_SOCIAL_BROADCAST_MODE: ${TK_SOCIAL_BROADCAST_MODE:-simulated}
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,3 +150,4 @@ services:
 volumes:
   pgdata:
   miniodata:
+  redisdata:

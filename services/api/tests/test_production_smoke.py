@@ -59,7 +59,7 @@ def client():
         database_url="sqlite+aiosqlite://",
         rate_limit_mode="memory",
         otp_channel="console",
-        jwt_secret="test-secret-not-for-prod",
+        jwt_secret="test-secret-not-for-production-2026",
     )
     app = create_app(settings=settings, engine=engine)
     with TestClient(app) as c:

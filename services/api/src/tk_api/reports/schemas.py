@@ -225,3 +225,87 @@ class ReportDetailRead(ReportRead):
     verifications_count: int = 0
     confirmations_count: int = 0
     refutations_count: int = 0
+
+
+class SocialAuthorityTag(BaseModel):
+    name: str
+    x_handle: str | None = None
+    instagram_handle: str | None = None
+    jurisdiction: str
+    is_primary: bool = True
+    verification_status: Literal["unverified", "verified_official"] = "unverified"
+    official_verification_source: str | None = None
+    verified_by: str | None = None
+    last_verified_at: str | None = None
+    next_review_due: str | None = None
+
+
+class SocialStoryCardData(BaseModel):
+    ticket_no: str
+    title: str
+    category: str
+    severity: str
+    address: str
+    city: str
+    primary_authority_name: str
+    primary_authority_handle: str
+    report_url: str
+    primary_image_url: str | None = None
+    trust_tier: str = "COMMUNITY_VERIFIED"
+
+
+class SocialXPost(BaseModel):
+    text: str
+    intent_url: str
+    handles: list[str] = Field(default_factory=list)
+    char_count: int
+    fits_single_tweet: bool = True
+
+
+class SocialInstagramPost(BaseModel):
+    caption: str
+    handles: list[str] = Field(default_factory=list)
+    hashtags: list[str] = Field(default_factory=list)
+
+
+class SocialPostResponse(BaseModel):
+    report_id: str
+    ticket_no: str
+    tone: Literal["urgent", "nudge", "accountability"]
+    x_post: SocialXPost
+    instagram_post: SocialInstagramPost
+    authorities: list[SocialAuthorityTag] = Field(default_factory=list)
+    hashtags: list[str] = Field(default_factory=list)
+    report_url: str
+    story_card: SocialStoryCardData
+    official_broadcast_eligible: bool = False
+
+
+class SocialBroadcastRequest(BaseModel):
+    network: Literal["x", "all"] = "x"
+    tone: Literal["urgent", "nudge", "accountability"] = "urgent"
+    idempotency_key: str | None = None
+    note: str | None = None
+
+
+class SocialBroadcastResponse(BaseModel):
+    id: str
+    status: Literal[
+        "simulated",
+        "queued",
+        "processing",
+        "published",
+        "failed",
+        "retry_wait",
+        "outcome_unknown",
+        "disabled",
+        "not_configured",
+    ]
+    report_id: str
+    ticket_no: str
+    message: str
+    published_url: str | None = None
+    external_post_id: str | None = None
+    attempts: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None

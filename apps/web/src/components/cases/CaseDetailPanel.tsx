@@ -19,6 +19,7 @@ import { useAuth } from "@/lib/auth"
 import { useLocale, useT } from "@/lib/i18n-client"
 import { Badge, Button, ErrorState, Input, Select, Spinner, Textarea } from "@/components/ui/primitives"
 import { caseStatusLabel, CaseStatusBadge } from "@/components/cases/CaseList"
+import { useRealtimeEvents } from "@/hooks/useRealtimeEvents"
 
 const CASE_EDGES: Record<string, CaseStatus[]> = {
   submitted: ["under_review", "needs_information", "rejected", "duplicate"],
@@ -46,6 +47,47 @@ const SLA_TONE: Record<string, string> = {
   paused: "default",
   exempt: "default",
   not_started: "default",
+}
+
+function SlaLiveCountdown({ target }: { target: string }) {
+  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number; isBreached: boolean }>({
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    isBreached: false,
+  })
+
+  useEffect(() => {
+    function update() {
+      const diff = new Date(target).getTime() - Date.now()
+      if (diff <= 0) {
+        setTimeLeft({ hours: 0, minutes: 0, seconds: 0, isBreached: true })
+      } else {
+        const totalSecs = Math.floor(diff / 1000)
+        const hours = Math.floor(totalSecs / 3600)
+        const minutes = Math.floor((totalSecs % 3600) / 60)
+        const seconds = totalSecs % 60
+        setTimeLeft({ hours, minutes, seconds, isBreached: false })
+      }
+    }
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [target])
+
+  if (timeLeft.isBreached) {
+    return (
+      <span className="font-mono text-xs font-bold text-red-600 bg-red-100 dark:bg-red-950 px-2 py-0.5 rounded">
+        BREACHED (00:00:00)
+      </span>
+    )
+  }
+
+  return (
+    <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded">
+      ⏱️ {String(timeLeft.hours).padStart(2, "0")}h {String(timeLeft.minutes).padStart(2, "0")}m {String(timeLeft.seconds).padStart(2, "0")}s remaining
+    </span>
+  )
 }
 
 type Thunk = () => Promise<unknown>
@@ -79,6 +121,23 @@ export function CaseDetailPanel({ caseId }: { caseId: string }) {
       setError(err instanceof Error ? err.message : String(err))
     }
   }, [caseId, isAdmin, isStaff])
+
+  // Live auto-refresh on case updates
+  useRealtimeEvents({
+    onEvent: (event, payload) => {
+      if (event.startsWith("case.") || event.startsWith("report.")) {
+        const item = payload as { id?: string; case_no?: string; report_id?: string } | null
+        if (
+          !item ||
+          item.id === caseId ||
+          item.case_no === data?.case_no ||
+          item.report_id === data?.report_id
+        ) {
+          void load()
+        }
+      }
+    },
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -139,17 +198,20 @@ export function CaseDetailPanel({ caseId }: { caseId: string }) {
           </Link>
         </div>
         {slaStatus && (
-          <p className="mt-2 text-sm text-stone-600">
-            {t("cases.sla.title")}:{" "}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-stone-600">
+            <span>{t("cases.sla.title")}:</span>
             <Badge tone={SLA_TONE[slaStatus] ?? "default"}>
               {t(`cases.sla.status.${slaStatus}` as keyof typeof en)}
             </Badge>
             {sla?.remaining_hours !== undefined && sla.remaining_hours !== null && (
-              <span className="ml-2 text-xs text-stone-500">
+              <span className="text-xs text-stone-500">
                 {t("cases.sla.remaining")}: {sla.remaining_hours}h
               </span>
             )}
-          </p>
+            {sla?.target_resolution_at && sla.status !== "paused" && (
+              <SlaLiveCountdown target={sla.target_resolution_at} />
+            )}
+          </div>
         )}
       </section>
 
@@ -424,21 +486,24 @@ function SlaPanel({
   return (
     <section className="rounded-md border border-stone-200 bg-white p-4">
       <h2 className="mb-2 text-sm font-semibold text-stone-700">{t("cases.sla.title")}</h2>
-      <p className="mb-2 text-sm text-stone-600">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-stone-600">
         <Badge tone={SLA_TONE[sla.status] ?? "default"}>
           {t(`cases.sla.status.${sla.status}` as keyof typeof en)}
         </Badge>
         {sla.remaining_hours !== null && sla.remaining_hours !== undefined && (
-          <span className="ml-2">
+          <span className="text-xs text-stone-500">
             {t("cases.sla.remaining")}: {sla.remaining_hours}h
           </span>
         )}
+        {sla.target_resolution_at && sla.status !== "paused" && (
+          <SlaLiveCountdown target={sla.target_resolution_at} />
+        )}
         {sla.target_resolution_at && (
-          <span className="ml-2">
+          <span className="text-xs text-stone-400 block w-full mt-1">
             {t("cases.sla.target")}: {new Date(sla.target_resolution_at).toLocaleString()}
           </span>
         )}
-      </p>
+      </div>
       {sla.status === "paused" ? (
         <Button disabled={disabled} onClick={() => void run(() => casesApi.resumeSla(caseId))}>
           {t("cases.sla.resume")}

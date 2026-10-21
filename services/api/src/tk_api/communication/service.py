@@ -287,8 +287,14 @@ async def review_alert(
     if decision == "published":
         alert.status = "published"
         alert.published_at = _utcnow()
+        alert.verified = True
+        alert.verified_by = actor_id
+        alert.verified_at = alert.reviewed_at
     elif decision == "rejected":
         alert.status = "rejected"
+        alert.verified = False
+        alert.verified_by = None
+        alert.verified_at = None
     else:
         raise ApiError("decision must be 'published' or 'rejected'", 422, "invalid_decision")
     await audit(
@@ -326,6 +332,7 @@ async def list_alerts(
     session: AsyncSession,
     *,
     status: str | None = None,
+    verified: bool | None = None,
     geography_id: uuid.UUID | None = None,
     include_expired: bool = False,
     limit: int = 50,
@@ -336,6 +343,8 @@ async def list_alerts(
         stmt = stmt.where(PublicAlert.status == status)
     else:
         stmt = stmt.where(PublicAlert.status.in_(["published", "resolved"]))
+    if verified is not None:
+        stmt = stmt.where(PublicAlert.verified.is_(verified))
     if geography_id:
         stmt = stmt.where(PublicAlert.geography_id == geography_id)
     if not include_expired:

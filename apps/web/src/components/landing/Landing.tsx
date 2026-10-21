@@ -12,9 +12,27 @@ import { MapExplore, type MapEntity } from "@/components/map/MapExplore"
 import { Button, Skeleton } from "@/components/ui/primitives"
 import { ReportCard, type ReportCardData } from "@/components/ui/data"
 import { Icon, type IconName } from "@/components/ui/icons"
-import { civicApi, reportsApi, institutionsApi } from "@/lib/api"
-import type { Category } from "@/lib/types"
+import { analyticsApi, civicApi, reportsApi } from "@/lib/api"
+import type { Category, OverviewAnalyticsResponse, TimeSeriesPoint } from "@/lib/types"
 import { useT } from "@/lib/i18n-client"
+import { FadeIn, SlideIn, PulseDot } from "@/components/ui/Motion"
+import { KpiSparkCard } from "@/components/analytics/Sparkline"
+import { LiveActivityFeed } from "@/components/LiveActivity"
+
+const IMPACT_METRIC_IDS = [
+  "report_count",
+  "verified_report_count",
+  "open_report_count",
+  "resolved_report_count",
+  "verified_resolution_count",
+  "institution_coverage_pct",
+] as const
+
+const TREND_FIELDS: Record<string, "total_count" | "verified_count" | "resolved_count"> = {
+  report_count: "total_count",
+  verified_report_count: "verified_count",
+  resolved_report_count: "resolved_count",
+}
 
 const CATEGORY_ICONS: Record<string, IconName> = {
   school: "building",
@@ -41,7 +59,10 @@ export function Landing() {
   const [categories, setCategories] = useState<Category[]>([])
   const [recent, setRecent] = useState<ReportCardData[] | null>(null)
   const [mapEntities, setMapEntities] = useState<MapEntity[]>([])
-  const [totalInstitutions, setTotalInstitutions] = useState<number | null>(null)
+  const [impactData, setImpactData] = useState<OverviewAnalyticsResponse | null>(null)
+  const [trendSeries, setTrendSeries] = useState<TimeSeriesPoint[]>([])
+  const [impactUnavailable, setImpactUnavailable] = useState(false)
+  const [trendsUnavailable, setTrendsUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -49,10 +70,11 @@ export function Landing() {
 
     async function loadLandingData() {
       try {
-        const [catRes, reportsRes, instRes] = await Promise.allSettled([
+        const [catRes, reportsRes, overviewRes, trendsRes] = await Promise.allSettled([
           civicApi.listCategories(),
           reportsApi.list({ limit: 6 }),
-          institutionsApi.list({ limit: 1 }),
+          analyticsApi.getOverview(),
+          analyticsApi.getTrends(),
         ])
 
         if (!active) return
@@ -74,25 +96,48 @@ export function Landing() {
             })),
           )
           setMapEntities(
-            reports.map((report) => ({
-              id: report.id,
-              kind: "report" as const,
-              title: report.title,
-              status: report.status,
-              severity: report.severity,
-              lon: report.location?.coordinates?.[0] ?? 75.7873,
-              lat: report.location?.coordinates?.[1] ?? 26.9124,
-            })),
+            reports.flatMap((report) => {
+              const coordinates = report.location?.coordinates
+              if (!coordinates) return []
+
+              const [lon, lat] = coordinates
+              if (
+                !Number.isFinite(lon) ||
+                !Number.isFinite(lat) ||
+                lon < -180 ||
+                lon > 180 ||
+                lat < -90 ||
+                lat > 90
+              ) {
+                return []
+              }
+
+              return [{
+                id: report.id,
+                kind: "report" as const,
+                title: report.title,
+                status: report.status,
+                severity: report.severity,
+                lon,
+                lat,
+              }]
+            }),
           )
         } else {
           setRecent([])
           setMapEntities([])
         }
 
-        if (instRes.status === "fulfilled") {
-          setTotalInstitutions(instRes.value.total ?? 0)
+        if (overviewRes.status === "fulfilled") {
+          setImpactData(overviewRes.value)
         } else {
-          setTotalInstitutions(0)
+          setImpactUnavailable(true)
+        }
+
+        if (trendsRes.status === "fulfilled") {
+          setTrendSeries(trendsRes.value.series)
+        } else {
+          setTrendsUnavailable(true)
         }
       } finally {
         if (active) setLoading(false)
@@ -108,36 +153,39 @@ export function Landing() {
   return (
     <div className="space-y-14">
       {/* Hero Section */}
-      <section className="py-8 text-center sm:py-16">
-        <span className="inline-flex items-center gap-2 rounded-full border border-(--color-primary-soft) bg-(--color-primary-soft) px-3 py-1 text-xs font-semibold text-(--color-primary-strong)">
-          <Icon name="check" size={14} />
-          <span>India Civic Accountability Platform</span>
-        </span>
-        <h1 className="mx-auto mt-4 max-w-4xl text-(--type-display) font-black tracking-tight sm:text-5xl">
-          Find what needs to be improved.{" "}
-          <span className="text-(--color-primary-strong)">Help make it better.</span>
-        </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-(--text-body) text-(--color-ink-muted)">
-          Explore public institutions, report local problems, verify improvements, and hold civic infrastructure accountable with transparent data and community oversight.
-        </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <Link href={`/${locale}/explore`}>
-            <Button size="lg" icon="explore">
-              {t("nav.explore")}
-            </Button>
-          </Link>
-          <Link href={`/${locale}/submit`}>
-            <Button size="lg" variant="primary" icon="report">
-              {t("home.submit")}
-            </Button>
-          </Link>
-          <Link href={`/${locale}/map`}>
-            <Button size="lg" variant="outline" icon="map">
-              {t("nav.map")}
-            </Button>
-          </Link>
-        </div>
-      </section>
+      <FadeIn>
+        <section className="py-8 text-center sm:py-16">
+          <span className="inline-flex items-center gap-2 rounded-full border border-(--color-primary-soft) bg-(--color-primary-soft) px-3 py-1 text-xs font-semibold text-(--color-primary-strong)">
+            <PulseDot active />
+            <span>India Civic Accountability Platform • Live</span>
+          </span>
+          <h1 className="mx-auto mt-4 max-w-4xl text-(--type-display) font-black tracking-tight sm:text-5xl">
+            Find what needs to be improved.{" "}
+            <span className="text-(--color-primary-strong)">Help make it better.</span>
+          </h1>
+          <p className="mx-auto mt-4 max-w-2xl text-(--text-body) text-(--color-ink-muted)">
+            Explore public institutions, report local problems, verify improvements, and hold civic infrastructure accountable with transparent data and community oversight.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <Link href={`/${locale}/explore`}>
+              <Button size="lg" icon="explore">
+                {t("nav.explore")}
+              </Button>
+            </Link>
+            <Link href={`/${locale}/submit`}>
+              <Button size="lg" variant="primary" icon="report">
+                {t("home.submit")}
+              </Button>
+            </Link>
+            <Link href={`/${locale}/map`}>
+              <Button size="lg" variant="outline" icon="map">
+                {t("nav.map")}
+              </Button>
+            </Link>
+          </div>
+          <p className="mt-3 text-xs text-(--color-ink-muted)">Press <kbd className="rounded border bg-(--color-surface) px-1 py-0.5 font-mono">⌘K</kbd> to jump anywhere • Offline drafts auto-save</p>
+        </section>
+      </FadeIn>
 
       {/* Categories Grid */}
       <section aria-labelledby="categories-heading" className="space-y-4">
@@ -192,73 +240,95 @@ export function Landing() {
       </section>
 
       {/* Civic Impact Metrics */}
-      <section
-        aria-labelledby="impact-heading"
-        className="rounded-(--radius-xl) border border-(--color-line) bg-(--color-surface) p-6 shadow-xs"
-      >
-        <div className="flex items-center justify-between border-b border-(--color-line) pb-4">
-          <h2 id="impact-heading" className="text-lg font-bold">
-            Civic Transparency & Impact
-          </h2>
-          <span className="text-xs text-(--color-ink-muted)">
-            Live verified data · Zero fabricated statistics
-          </span>
-        </div>
-        <dl className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-4">
-          <div>
-            <dt className="text-(--text-caption) font-medium text-(--color-ink-muted)">
-              Citizen Reports
-            </dt>
-            <dd className="mt-1 text-2xl font-black text-(--color-ink)">
-              {recent?.length ?? 0}
-            </dd>
+      <SlideIn from="bottom">
+        <section
+          aria-labelledby="impact-heading"
+          className="rounded-(--radius-xl) border border-(--color-line) bg-(--color-surface) p-6 shadow-xs"
+        >
+          <div className="flex items-center justify-between border-b border-(--color-line) pb-4">
+            <h2 id="impact-heading" className="flex items-center gap-2 text-lg font-bold">
+              <PulseDot active /> Civic Transparency & Impact
+            </h2>
+            <Link
+              href={`/${locale}/analytics`}
+              className="text-xs font-semibold text-(--color-primary-strong) hover:underline"
+            >
+              Explore analytics →
+            </Link>
           </div>
-          <div>
-            <dt className="text-(--text-caption) font-medium text-(--color-ink-muted)">
-              Institutions Registered
-            </dt>
-            <dd className="mt-1 text-2xl font-black text-(--color-ink)">
-              {totalInstitutions ?? 0}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-(--text-caption) font-medium text-(--color-ink-muted)">
-              Community Verifications
-            </dt>
-            <dd className="mt-1 text-2xl font-black text-(--color-ink)">
-              0
-            </dd>
-          </div>
-          <div>
-            <dt className="text-(--text-caption) font-medium text-(--color-ink-muted)">
-              Verified Resolutions
-            </dt>
-            <dd className="mt-1 text-2xl font-black text-(--color-ink)">
-              0
-            </dd>
-          </div>
-        </dl>
-      </section>
+          {loading && (
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" aria-label="Loading impact metrics">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} height={88} />
+              ))}
+            </div>
+          )}
+          {!loading && impactData && (
+            <>
+              <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                {IMPACT_METRIC_IDS.flatMap((metricId) => {
+                  const metric = impactData.kpis.find((item) => item.metric_id === metricId)
+                  if (!metric) return []
+                  const trendField = TREND_FIELDS[metric.metric_id]
+                  const trend = trendField
+                    ? trendSeries.map((point) => point[trendField])
+                    : undefined
+
+                  return [
+                    <KpiSparkCard
+                      key={metric.metric_id}
+                      label={metric.name}
+                      value={new Intl.NumberFormat(locale).format(metric.value)}
+                      trend={trend}
+                      hint={metric.period_label}
+                    />,
+                  ]
+                })}
+              </div>
+              <p className="mt-4 text-xs text-(--color-ink-muted)">
+                {impactData.data_coverage_note}
+              </p>
+              {trendsUnavailable && (
+                <p role="status" className="mt-2 text-xs text-(--color-ink-muted)">
+                  Trend history is temporarily unavailable; current totals are still shown.
+                </p>
+              )}
+            </>
+          )}
+          {!loading && impactUnavailable && (
+            <p role="status" className="mt-6 text-sm text-(--color-ink-muted)">
+              Impact metrics are temporarily unavailable. Please try again later.
+            </p>
+          )}
+        </section>
+      </SlideIn>
 
       {/* Map Preview */}
-      <section aria-labelledby="map-preview-heading" className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 id="map-preview-heading" className="text-xl font-bold">
-            {t("home.recent")} on the Map
-          </h2>
-          <Link
-            href={`/${locale}/map`}
-            className="text-xs font-semibold text-(--color-primary-strong) hover:underline"
-          >
-            Open full map →
-          </Link>
-        </div>
-        {loading ? (
-          <Skeleton height={280} />
-        ) : (
-          <MapExplore entities={mapEntities} />
-        )}
-      </section>
+      <SlideIn from="right">
+        <section aria-labelledby="map-preview-heading" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 id="map-preview-heading" className="text-xl font-bold">
+              {t("home.recent")} on the Map
+            </h2>
+            <Link
+              href={`/${locale}/map`}
+              className="text-xs font-semibold text-(--color-primary-strong) hover:underline"
+            >
+              Open full map →
+            </Link>
+          </div>
+          {loading ? (
+            <Skeleton height={280} />
+          ) : (
+            <MapExplore entities={mapEntities} />
+          )}
+        </section>
+      </SlideIn>
+
+      {/* Live Activity — super-power realtime */}
+      <FadeIn delay={120}>
+        <LiveActivityFeed />
+      </FadeIn>
 
       {/* Recent Reports List */}
       <section aria-labelledby="latest-heading" className="space-y-4">

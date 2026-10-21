@@ -101,7 +101,7 @@ def test_civic_lifecycle_on_postgres() -> None:
         log_level="WARNING",
         database_url=DB_URL,
         rate_limit_mode="memory",
-        jwt_secret="test-secret-not-for-prod",
+        jwt_secret="test-secret-not-for-production-2026",
     )
     app = create_app(settings=settings)
     sender = RecordingSender()

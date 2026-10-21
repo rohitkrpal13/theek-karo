@@ -247,6 +247,7 @@ resource "aws_ecs_task_definition" "api" {
         { name = "TK_REDIS_URL", value = "redis://${aws_elasticache_cluster.main.cache_nodes[0].address}:6379/0" },
         { name = "TK_CELERY_BROKER_URL", value = "redis://${aws_elasticache_cluster.main.cache_nodes[0].address}:6379/1" },
         { name = "TK_CELERY_ENABLED", value = "true" },
+        { name = "TK_SOCIAL_BROADCAST_MODE", value = "simulated" },
         { name = "TK_AI_AUTO_ANALYSIS", value = "true" },
         { name = "TK_MEDIA_STORAGE_MODE", value = "minio" },
         { name = "TK_MEDIA_MINIO_ENDPOINT", value = "s3.${var.region}.amazonaws.com" },
@@ -302,12 +303,13 @@ resource "aws_ecs_task_definition" "worker" {
       name  = "worker"
       image = "${var.region}.dkr.ecr.${var.region}.amazonaws.com/tk-api:latest"
       command = [
-        "celery", "-A", "tk_api.worker:celery_app", "worker", "--beat",
-        "--pool=solo", "-l", "info",
+        "celery", "-A", "tk_api.worker:celery_app", "worker", "-Q", "tk_jobs",
+        "--beat", "--pool=solo", "-l", "info",
       ]
       environment = [
         { name = "TK_ENV", value = var.environment },
         { name = "TK_CELERY_BROKER_URL", value = "redis://${aws_elasticache_cluster.main.cache_nodes[0].address}:6379/1" },
+        { name = "TK_SOCIAL_BROADCAST_MODE", value = "simulated" },
         { name = "TK_MEDIA_STORAGE_MODE", value = "minio" },
         { name = "TK_MEDIA_MINIO_ENDPOINT", value = "s3.${var.region}.amazonaws.com" },
         { name = "TK_MEDIA_MINIO_REGION", value = var.region },

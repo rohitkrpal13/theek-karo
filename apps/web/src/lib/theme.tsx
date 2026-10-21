@@ -63,6 +63,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [resolved, mode])
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return
     const media = window.matchMedia("(prefers-color-scheme: dark)")
     const listener = (event: MediaQueryListEvent) => setSystemDark(event.matches)
     media.addEventListener("change", listener)

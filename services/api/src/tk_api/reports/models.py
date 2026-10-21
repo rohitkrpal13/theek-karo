@@ -18,11 +18,13 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -237,3 +239,56 @@ class ReportComment(Base):
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SocialBroadcast(Base):
+    """Durable record of civic social amplification broadcasts (PRD §8, §14)."""
+
+    __tablename__ = "social_broadcasts"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reports.id", ondelete="CASCADE"), index=True
+    )
+    requested_by: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    network: Mapped[str] = mapped_column(String(16), default="x")  # "x", "all"
+    tone: Mapped[str] = mapped_column(String(16), default="urgent")  # post tone
+    status: Mapped[str] = mapped_column(
+        String(32), default="queued"
+    )  # "simulated", "queued", "processing", "published", "failed", "retry_wait"
+
+    post_text: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    external_post_id: Mapped[str | None] = mapped_column(String(64))
+    published_url: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    audit_correlation_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_social_broadcasts_report_status", "report_id", "status"),
+        Index("ix_social_broadcasts_status_created", "status", "created_at"),
+        Index(
+            "uq_social_broadcasts_report_idempotency",
+            "report_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+            sqlite_where=text("idempotency_key IS NOT NULL"),
+        ),
+        Index(
+            "uq_social_broadcasts_active_report",
+            "report_id",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('queued', 'processing', 'published', 'outcome_unknown')"
+            ),
+            sqlite_where=text("status IN ('queued', 'processing', 'published', 'outcome_unknown')"),
+        ),
+    )

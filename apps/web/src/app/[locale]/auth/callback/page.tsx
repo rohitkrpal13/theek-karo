@@ -26,7 +26,8 @@ export default function AuthCallbackPage() {
     authApi
       .googleCallback(code, state, redirectUri)
       .then((res) => {
-        login(res.access_token, res.user)
+        if (res.refresh_token) login(res.access_token, res.refresh_token, res.user)
+        else login(res.access_token, res.user)
         router.push(`/${locale}/`)
       })
       .catch((err) => {

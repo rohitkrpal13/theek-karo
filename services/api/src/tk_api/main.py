@@ -64,6 +64,11 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:  # typ
             app.state.storage = build_storage(resolved)
         if "ai_gateway" not in app.state:
             app.state.ai_gateway = build_gateway(resolved)
+        app.state.redis = redis_client
+        from tk_api.core.events import InMemoryEventBus
+
+        if not hasattr(app.state, "event_bus") or app.state.event_bus is None:
+            app.state.event_bus = InMemoryEventBus()
         setup_otel(app, resolved)
         yield
         the_engine = getattr(app.state, "engine", None)

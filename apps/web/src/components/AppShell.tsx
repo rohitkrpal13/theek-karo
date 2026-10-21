@@ -12,6 +12,8 @@ import { Icon, type IconName } from "@/components/ui/icons"
 import { LanguageSelector } from "@/components/ui/data"
 import { Button, SkipLink } from "@/components/ui/primitives"
 import { GlobalSearch } from "@/components/GlobalSearch"
+import { RealtimeAlertBanner } from "@/components/RealtimeAlertBanner"
+import { RealtimeNotificationBell } from "@/components/RealtimeNotificationBell"
 import { useTheme } from "@/lib/theme"
 import { useAuth } from "@/lib/auth"
 import { useT } from "@/lib/i18n-client"
@@ -29,7 +31,32 @@ const baseNav: Array<{
   { href: (l) => `/${l}/activity`, label: "nav.activity", icon: "activity" },
   { href: (l) => `/${l}/trust`, label: "nav.trust", icon: "shield" },
   { href: (l) => `/${l}/open-data`, label: "nav.open-data", icon: "database" },
+  { href: (l) => `/${l}/notifications`, label: "nav.notifications", icon: "bell" },
   { href: (l) => `/${l}/profile`, label: "nav.profile", icon: "user" },
+]
+
+const mobileNavLabels: Record<string, string> = {
+  "nav.home": "nav.homeShort",
+  "nav.explore": "nav.exploreShort",
+  "nav.map": "nav.mapShort",
+  "nav.submit": "nav.submitShort",
+  "nav.profile": "nav.profileShort",
+}
+
+const mobilePrimaryLabels = [
+  "nav.home",
+  "nav.explore",
+  "nav.map",
+  "nav.submit",
+  "nav.profile",
+]
+
+const mobileMoreLabels = [
+  "nav.institutions",
+  "nav.activity",
+  "nav.trust",
+  "nav.open-data",
+  "nav.notifications",
 ]
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -40,6 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { resolved, toggle } = useTheme()
   const { user } = useAuth()
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false)
 
   const isActive = (href: string) =>
     pathname === href || (href !== `/${locale}/` && pathname.startsWith(href))
@@ -112,12 +140,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <Link
               href={`/${locale}/activity`}
-              className={`text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 text-sm font-medium transition-colors ${
                 isActive(`/${locale}/activity`)
                   ? "font-semibold text-(--color-primary-strong)"
                   : "text-(--color-ink-muted) hover:text-(--color-ink)"
               }`}
             >
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
               {t("nav.activity")}
             </Link>
             <Link
@@ -139,6 +171,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Header Controls (Theme, Language, User Menu) */}
           <div className="flex items-center gap-2">
+            {/* Realtime Notification Bell */}
+            <div className="hidden md:block">
+              <RealtimeNotificationBell />
+            </div>
+
             {/* Mobile Search Button */}
             <button
               type="button"
@@ -150,18 +187,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
 
             {/* Theme Toggle */}
-            <Button
-              variant="ghost"
-              size="sm"
-              data-theme-toggle
-              icon={resolved === "dark" ? "info" : "clock"}
-              onClick={toggle}
-              aria-label={`Switch theme (currently ${resolved})`}
-            >
-              <span className="hidden sm:inline">
-                {resolved === "dark" ? "Light" : "Dark"}
-              </span>
-            </Button>
+            <div className="hidden md:block">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-theme-toggle
+                icon={resolved === "dark" ? "info" : "clock"}
+                onClick={toggle}
+                aria-label={`Switch theme (currently ${resolved})`}
+              >
+                <span>{resolved === "dark" ? "Light" : "Dark"}</span>
+              </Button>
+            </div>
 
             {/* Language Selector */}
             <details className="relative">
@@ -203,6 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </header>
+      <RealtimeAlertBanner />
 
       {/* Main Content Area */}
       <main
@@ -213,33 +251,109 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Mobile Bottom Thumb Navigation */}
-      <nav
-        aria-label="Primary mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-(--color-line) bg-(--color-page)/95 backdrop-blur md:hidden"
-      >
-        <ul className="mx-auto grid max-w-md grid-cols-6">
-          {baseNav.filter((item) => item.label !== "nav.activity").map((item) => {
-            const href = item.href(locale)
-            const active = isActive(href)
-            return (
-              <li key={item.label}>
-                <Link
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className={`flex flex-col items-center gap-1 px-1 py-2 text-(--text-caption) transition-colors ${
-                    active
-                      ? "font-bold text-(--color-primary-strong)"
-                      : "text-(--color-ink-muted) hover:text-(--color-ink)"
-                  }`}
-                >
-                  <Icon name={item.icon} size={20} />
-                  <span className="truncate">{t(item.label as never)}</span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+      <div className="fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)] md:hidden">
+        <nav
+          aria-label="Primary mobile navigation"
+          className="border-t border-(--color-line) bg-(--color-page)/95 backdrop-blur"
+        >
+          <ul className="mx-auto grid max-w-md grid-cols-6">
+            {baseNav
+              .filter((item) => mobilePrimaryLabels.includes(item.label))
+              .map((item) => {
+                const href = item.href(locale)
+                const active = isActive(href)
+                return (
+                  <li key={item.label}>
+                    <Link
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      aria-label={t(item.label as never)}
+                      onClick={() => setMobileMoreOpen(false)}
+                      className={`flex flex-col items-center gap-1 px-1 py-2 text-(--text-caption) transition-colors ${
+                        active
+                          ? "font-bold text-(--color-primary-strong)"
+                          : "text-(--color-ink-muted) hover:text-(--color-ink)"
+                      }`}
+                    >
+                      <Icon name={item.icon} size={20} />
+                      <span className="truncate">
+                        {t((mobileNavLabels[item.label] ?? item.label) as never)}
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            <li>
+              <button
+                type="button"
+                aria-expanded={mobileMoreOpen}
+                aria-controls="mobile-more-menu"
+                aria-label={t("nav.more" as never)}
+                onClick={() => setMobileMoreOpen((open) => !open)}
+                className={`flex w-full flex-col items-center gap-1 px-1 py-2 text-(--text-caption) transition-colors ${
+                  mobileMoreOpen ||
+                  baseNav.some(
+                    (item) =>
+                      mobileMoreLabels.includes(item.label) &&
+                      isActive(item.href(locale)),
+                  )
+                    ? "font-bold text-(--color-primary-strong)"
+                    : "text-(--color-ink-muted) hover:text-(--color-ink)"
+                }`}
+              >
+                <Icon name="kebab" size={20} />
+                <span>{t("nav.more" as never)}</span>
+              </button>
+            </li>
+          </ul>
+        </nav>
+        <nav
+          id="mobile-more-menu"
+          aria-label={t("nav.more" as never)}
+          hidden={!mobileMoreOpen}
+          className="absolute inset-x-3 bottom-[calc(100%+0.5rem)] mx-auto max-w-sm rounded-(--radius-lg) border border-(--color-line) bg-(--color-surface-raised) p-2 shadow-(--elevation-lg)"
+        >
+          <ul className="grid grid-cols-2 gap-1">
+            {baseNav
+              .filter((item) => mobileMoreLabels.includes(item.label))
+              .map((item) => {
+                const href = item.href(locale)
+                const active = isActive(href)
+                return (
+                  <li key={item.label}>
+                    <Link
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      aria-label={t(item.label as never)}
+                      onClick={() => setMobileMoreOpen(false)}
+                      className={`flex min-h-11 items-center gap-2 rounded-(--radius-md) px-3 py-2 text-sm ${
+                        active
+                          ? "bg-(--color-primary-soft) font-semibold text-(--color-primary-strong)"
+                          : "text-(--color-ink-muted) hover:bg-(--color-page) hover:text-(--color-ink)"
+                      }`}
+                    >
+                      <Icon name={item.icon} size={18} />
+                      <span>{t(item.label as never)}</span>
+                    </Link>
+                  </li>
+                )
+              })}
+            <li>
+              <button
+                type="button"
+                data-theme-toggle
+                onClick={toggle}
+                className="flex min-h-11 w-full items-center gap-2 rounded-(--radius-md) px-3 py-2 text-left text-sm text-(--color-ink-muted) hover:bg-(--color-page) hover:text-(--color-ink)"
+              >
+                <Icon name={resolved === "dark" ? "info" : "clock"} size={18} />
+                <span>
+                  {t((resolved === "dark" ? "nav.switchToLightTheme" : "nav.switchToDarkTheme") as never)}
+                </span>
+              </button>
+            </li>
+          </ul>
+        </nav>
+      </div>
     </div>
   )
 }

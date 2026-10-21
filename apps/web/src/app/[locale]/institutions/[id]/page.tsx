@@ -114,9 +114,18 @@ export default function InstitutionDigitalTwinPage() {
   ]
 
   const lon =
-    institution.location_lon ?? institution.location_geojson?.coordinates?.[0] ?? 75.7873
+    institution.location_lon ?? institution.location_geojson?.coordinates?.[0]
   const lat =
-    institution.location_lat ?? institution.location_geojson?.coordinates?.[1] ?? 26.9124
+    institution.location_lat ?? institution.location_geojson?.coordinates?.[1]
+  const hasValidLocation =
+    lon !== undefined &&
+    lat !== undefined &&
+    Number.isFinite(lon) &&
+    Number.isFinite(lat) &&
+    lon >= -180 &&
+    lon <= 180 &&
+    lat >= -90 &&
+    lat <= 90
 
   return (
     <div className="space-y-8">
@@ -138,7 +147,9 @@ export default function InstitutionDigitalTwinPage() {
                 tier={
                   institution.verification_state === "official"
                     ? "official"
-                    : "community_verified"
+                    : institution.verification_state === "community_verified"
+                      ? "community_verified"
+                      : "citizen"
                 }
               />
               {comparison && comparison.overall_discrepancy_state === "POSSIBLE_DISCREPANCY" && (
@@ -153,8 +164,12 @@ export default function InstitutionDigitalTwinPage() {
             </h1>
 
             <p className="text-sm text-(--color-ink-muted)">
-              {institution.geography?.name ?? "India"}
-              {institution.official_id ? ` · Official ID: ${institution.official_id}` : ""}
+              {institution.geography?.name ??
+                institution.address ??
+                t("institutions.location_not_available")}
+              {(institution.official_identifier ?? institution.official_id)
+                ? ` · Official ID: ${institution.official_identifier ?? institution.official_id}`
+                : ""}
             </p>
           </div>
 
@@ -226,12 +241,14 @@ export default function InstitutionDigitalTwinPage() {
                     {institution.verification_state.replace("_", " ")}
                   </p>
                 </div>
-                <div className="rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-3">
-                  <span className="text-xs text-(--color-ink-muted)">Data Confidence</span>
-                  <p className="text-sm font-bold text-(--color-ink)">
-                    {Math.round(institution.confidence_score * 100)}%
-                  </p>
-                </div>
+                {institution.confidence_score != null && (
+                  <div className="rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-3">
+                    <span className="text-xs text-(--color-ink-muted)">Data Confidence</span>
+                    <p className="text-sm font-bold text-(--color-ink)">
+                      {Math.round(institution.confidence_score * 100)}%
+                    </p>
+                  </div>
+                )}
                 <div className="rounded-(--radius-md) border border-(--color-line) bg-(--color-surface) p-3">
                   <span className="text-xs text-(--color-ink-muted)">Last Updated</span>
                   <p className="text-sm font-bold text-(--color-ink)">
@@ -253,21 +270,29 @@ export default function InstitutionDigitalTwinPage() {
               <h2 id="location-heading" className="text-lg font-bold">
                 Location & Coordinates
               </h2>
-              <MapExplore
-                entities={[
-                  {
-                    id: institution.id,
-                    kind: "institution",
-                    title: institution.name,
-                    subtitle: institution.operational_status,
-                    lon,
-                    lat,
-                  },
-                ]}
-              />
-              <p className="text-xs text-(--color-ink-muted)">
-                GPS Coordinates: {lat.toFixed(5)}, {lon.toFixed(5)}
-              </p>
+              {hasValidLocation ? (
+                <>
+                  <MapExplore
+                    entities={[
+                      {
+                        id: institution.id,
+                        kind: "institution",
+                        title: institution.name,
+                        subtitle: institution.operational_status,
+                        lon,
+                        lat,
+                      },
+                    ]}
+                  />
+                  <p className="text-xs text-(--color-ink-muted)">
+                    GPS Coordinates: {lat.toFixed(5)}, {lon.toFixed(5)}
+                  </p>
+                </>
+              ) : (
+                <p className="rounded-(--radius-lg) border border-dashed border-(--color-line) p-6 text-sm text-(--color-ink-muted)">
+                  {t("institutions.coordinates_missing")}
+                </p>
+              )}
             </section>
           </div>
 

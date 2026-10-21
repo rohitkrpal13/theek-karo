@@ -125,7 +125,7 @@ def test_notifications_on_postgres_and_worker_round_trip() -> None:
         log_level="WARNING",
         database_url=DB_URL,
         rate_limit_mode="memory",
-        jwt_secret="test-secret-not-for-prod",
+        jwt_secret="test-secret-not-for-production-2026",
         celery_enabled=False,
     )
     app = create_app(settings=settings)

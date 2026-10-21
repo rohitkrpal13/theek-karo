@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tk_api.core.errors import ConflictError, NotFoundError, ValidationError
@@ -82,8 +82,17 @@ async def list_institutions(
         count_query = count_query.where(Institution.verification_state == verification_state)
     if q is not None and q.strip():
         norm = _normalize(q)
-        base_query = base_query.where(Institution.normalized_name.ilike(f"%{norm}%"))
-        count_query = count_query.where(Institution.normalized_name.ilike(f"%{norm}%"))
+        search_tokens = norm.split()
+        search_filter = (
+            or_(
+                Institution.normalized_name.ilike(f"%{norm}%"),
+                and_(*(Institution.address.ilike(f"%{token}%") for token in search_tokens)),
+            )
+            if search_tokens
+            else false()
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
 
     total = (await session.execute(count_query)).scalar_one()
     stmt = base_query.order_by(Institution.name).offset(params.offset).limit(params.limit)
