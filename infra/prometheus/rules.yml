@@ -44,3 +44,23 @@ groups:
         annotations:
           summary: "notification queue backlog above 500 rows"
           runbook: docs/RUNBOOKS.md#queue-backlog
+
+  - name: tk-social-broadcast
+    rules:
+      - alert: TkSocialBroadcastOutcomeUnknown
+        expr: theekkaro_social_broadcast_outcome_unknown_total > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Social broadcast entered outcome_unknown state; operator reconciliation required"
+          runbook: docs/runbooks/social-broadcast-worker.md#scenario-b-ambiguous-network-timeout-outcome_unknown
+
+      - alert: TkSocialBroadcastQueueBacklog
+        expr: redis_queue_length{queue="tk_jobs"} > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Social broadcast queue tk_jobs depth breached 50 items"
+          runbook: docs/runbooks/social-broadcast-worker.md#8-measurable-operational-signals--prometheus-alerting

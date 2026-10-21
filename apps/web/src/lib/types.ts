@@ -981,3 +981,83 @@ export interface MapNearbyResponse {
   }>
   total_count: number
 }
+
+export type SocialPostTone = "urgent" | "nudge" | "accountability"
+
+export interface SocialAuthorityTag {
+  name: string
+  x_handle: string | null
+  instagram_handle: string | null
+  jurisdiction: string
+  is_primary: boolean
+  verification_status: "unverified" | "verified_official"
+  official_verification_source?: string | null
+  verified_by?: string | null
+  last_verified_at?: string | null
+  next_review_due?: string | null
+}
+
+export interface SocialStoryCardData {
+  ticket_no: string
+  title: string
+  category: string
+  severity: string
+  address: string
+  city: string
+  primary_authority_name: string
+  primary_authority_handle: string
+  report_url: string
+  primary_image_url: string | null
+  trust_tier: string
+}
+
+export interface SocialXPost {
+  text: string
+  intent_url: string
+  handles: string[]
+  char_count: number
+  fits_single_tweet: boolean
+}
+
+export interface SocialInstagramPost {
+  caption: string
+  handles: string[]
+  hashtags: string[]
+}
+
+export interface SocialPostResponse {
+  report_id: string
+  ticket_no: string
+  tone: SocialPostTone
+  x_post: SocialXPost
+  instagram_post: SocialInstagramPost
+  authorities: SocialAuthorityTag[]
+  hashtags: string[]
+  report_url: string
+  story_card: SocialStoryCardData
+  official_broadcast_eligible: boolean
+}
+
+export type SocialBroadcastStatus =
+  | "simulated"
+  | "queued"
+  | "processing"
+  | "published"
+  | "failed"
+  | "retry_wait"
+  | "outcome_unknown"
+  | "disabled"
+  | "not_configured"
+
+export interface SocialBroadcastResponse {
+  id?: string
+  status: SocialBroadcastStatus
+  report_id: string
+  ticket_no: string
+  message: string
+  published_url: string | null
+  external_post_id?: string | null
+  attempts?: number
+  created_at?: string | null
+  updated_at?: string | null
+}

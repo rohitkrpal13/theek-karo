@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { Button, Combobox } from "@/components/ui/primitives"
 import { Icon } from "@/components/ui/icons"
+import { SocialAmplifyModal } from "@/components/social/SocialAmplifyModal"
 import { civicApi, institutionsApi, reportsApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useT } from "@/lib/i18n-client"
@@ -634,58 +635,63 @@ export function SubmitWizard({ initialCategory, initialLat, initialLon, draftId 
   // Success Confirmation Screen
   if (done) {
     return (
-      <div className="mx-auto max-w-lg rounded-(--radius-xl) border border-(--color-line) bg-(--color-surface) p-8 text-center shadow-xs">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-          <Icon name="check" size={32} />
-        </div>
-        <h2 className="mt-4 text-2xl font-black text-(--color-ink)">
-          {t("submit.thanks")}
-        </h2>
-        <p className="mt-2 text-sm text-(--color-ink-muted)">
-          Your observation has been registered on the civic ledger with unique ticket:
-        </p>
-        <div className="mt-3 flex items-center justify-center gap-2">
-          <p className="rounded-(--radius-md) bg-(--color-surface-sunken) px-4 py-2 font-mono text-base font-bold text-(--color-primary-strong)">
-            {done.ticket_no}
+      <div className="mx-auto max-w-2xl space-y-6">
+        <div className="rounded-(--radius-xl) border border-(--color-line) bg-(--color-surface) p-8 text-center shadow-xs">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            <Icon name="check" size={32} />
+          </div>
+          <h2 className="mt-4 text-2xl font-black text-(--color-ink)">
+            {t("submit.thanks")}
+          </h2>
+          <p className="mt-2 text-sm text-(--color-ink-muted)">
+            Your observation has been registered on the civic ledger with unique ticket:
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void navigator.clipboard.writeText(done.ticket_no)
-            }}
-          >
-            Copy
-          </Button>
-        </div>
-
-        <p className="mt-4 text-xs text-(--color-ink-muted)">
-          Community members and verifiers can now corroborate this report. You can track status transitions and resolution progress anytime.
-        </p>
-
-        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Link href={`/${locale}/reports/${done.id}`}>
-            <Button variant="primary" size="md">
-              View Report Details
+          <div className="mt-3 flex items-center justify-center gap-2">
+            <p className="rounded-(--radius-md) bg-(--color-surface-sunken) px-4 py-2 font-mono text-base font-bold text-(--color-primary-strong)">
+              {done.ticket_no}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(done.ticket_no)
+              }}
+            >
+              Copy
             </Button>
-          </Link>
-          <Button
-            variant="outline"
-            size="md"
-            onClick={() => {
-              setDone(null)
-              setStep(0)
-              setTitle("")
-              setDescription("")
-              setFiles([])
-              setActiveDraftId(null)
-              setSubmittedReport(null)
-              idempotencyKey.current = crypto.randomUUID()
-            }}
-          >
-            Submit Another Report
-          </Button>
+          </div>
+
+          <p className="mt-4 text-xs text-(--color-ink-muted)">
+            Community members and verifiers can now corroborate this report. You can track status transitions and resolution progress anytime.
+          </p>
+
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link href={`/${locale}/reports/${done.id}`}>
+              <Button variant="primary" size="md">
+                View Report Details
+              </Button>
+            </Link>
+            <Button
+              variant="outline"
+              size="md"
+              onClick={() => {
+                setDone(null)
+                setStep(0)
+                setTitle("")
+                setDescription("")
+                setFiles([])
+                setActiveDraftId(null)
+                setSubmittedReport(null)
+                idempotencyKey.current = crypto.randomUUID()
+              }}
+            >
+              Submit Another Report
+            </Button>
+          </div>
         </div>
+
+        {/* Civic Social Amplification Section */}
+        <SocialAmplifyModal reportId={done.id} embedded={true} />
       </div>
     )
   }

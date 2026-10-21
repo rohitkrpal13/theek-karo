@@ -14,6 +14,9 @@ import type {
   ReportSeverity,
   ReportStatus,
   ReportVisibility,
+  SocialBroadcastResponse,
+  SocialPostResponse,
+  SocialPostTone,
   TimelineEntry,
   UploadSlotResponse,
   Verification,
@@ -281,4 +284,41 @@ export const reportsApi = {
 
   getAnalysis: (id: string, options?: RequestOptions): Promise<Analysis> =>
     api.get<Analysis>(`/reports/${id}/analysis`, options),
+
+  getSocialPost: (
+    id: string,
+    tone: SocialPostTone = "urgent",
+    options?: RequestOptions,
+  ): Promise<SocialPostResponse> =>
+    api.get<SocialPostResponse>(`/reports/${id}/social-post?tone=${tone}`, options),
+
+  broadcastSocialPost: (
+    id: string,
+    payload: {
+      network?: "x" | "all"
+      tone?: SocialPostTone
+      idempotency_key?: string
+      note?: string
+    } = { network: "x" },
+    options?: RequestOptions,
+  ): Promise<SocialBroadcastResponse> =>
+    api.post<SocialBroadcastResponse>(`/reports/${id}/social-broadcast`, payload, options),
+
+  getSocialBroadcastStatus: (
+    id: string,
+    options?: RequestOptions,
+  ): Promise<SocialBroadcastResponse | null> =>
+    api
+      .get<SocialBroadcastResponse>(`/reports/${id}/social-broadcast`, options)
+      .catch((err: unknown) => {
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          "status" in err &&
+          (err as { status: number }).status === 404
+        ) {
+          return null
+        }
+        throw err
+      }),
 }

@@ -10,6 +10,7 @@ import { MapExplore } from "@/components/map/MapExplore"
 import { ProvenanceBadge } from "@/components/ui/data"
 import { Icon } from "@/components/ui/icons"
 import { Button, Skeleton } from "@/components/ui/primitives"
+import { SocialAmplifyModal } from "@/components/social/SocialAmplifyModal"
 import { reportsApi, institutionsApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useT } from "@/lib/i18n-client"
@@ -89,6 +90,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const [verifying, setVerifying] = useState(false)
   const [verifyNotes, setVerifyNotes] = useState("")
   const [showVerifyModal, setShowVerifyModal] = useState<"confirm" | "refute" | "needs_information" | null>(null)
+  const [showSocialModal, setShowSocialModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -254,16 +256,27 @@ export function ReportDetail({ reportId }: { reportId: string }) {
               </span>
             )}
           </div>
-          <div className="text-xs text-(--color-ink-muted) flex items-center gap-2">
-            {report.observed_at && (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSocialModal(true)}
+              className="font-bold border-orange-300 text-orange-700 hover:bg-orange-50 dark:border-orange-800 dark:text-orange-400 dark:hover:bg-orange-950/30"
+            >
+              <span>📢</span>
+              <span className="ml-1">Amplify on X & IG</span>
+            </Button>
+            <div className="text-xs text-(--color-ink-muted) flex items-center gap-2">
+              {report.observed_at && (
+                <span>
+                  Observed: <FormattedDate iso={report.observed_at} />
+                </span>
+              )}
+              <span>·</span>
               <span>
-                Observed: <FormattedDate iso={report.observed_at} />
+                Submitted: <FormattedDate iso={report.created_at} />
               </span>
-            )}
-            <span>·</span>
-            <span>
-              Submitted: <FormattedDate iso={report.created_at} />
-            </span>
+            </div>
           </div>
         </div>
 
@@ -646,6 +659,14 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           </p>
         )}
       </section>
+
+      {showSocialModal && (
+        <SocialAmplifyModal
+          reportId={reportId}
+          isOpen={showSocialModal}
+          onClose={() => setShowSocialModal(false)}
+        />
+      )}
     </div>
   )
 }
